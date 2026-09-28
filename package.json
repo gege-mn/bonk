@@ -1,0 +1,55 @@
+{
+	"name": "bonk",
+	"private": true,
+	"version": "0.1.0",
+	"description": "Your site is down, bonk! Uptime monitoring and a status page that runs entirely on Cloudflare Workers + D1.",
+	"license": "Apache-2.0",
+	"type": "module",
+	"packageManager": "pnpm@11.11.0",
+	"scripts": {
+		"dev": "vite dev",
+		"build": "vite build",
+		"preview": "pnpm build && wrangler dev --test-scheduled --port 4173",
+		"deploy": "pnpm db:migrate && wrangler deploy",
+		"db:migrate": "wrangler d1 migrations apply DB --remote",
+		"db:migrate:local": "wrangler d1 migrations apply DB --local",
+		"prepare": "svelte-kit sync || echo ''",
+		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+		"gen": "wrangler types",
+		"test": "vitest --run"
+	},
+	"cloudflare": {
+		"bindings": {
+			"DB": {
+				"description": "D1 database that stores monitors, check history, incidents and settings."
+			},
+			"ADMIN_PASSWORD": {
+				"description": "Password for `/admin`. Used only when Cloudflare Access is **not** configured. Pick something long."
+			},
+			"ENCRYPTION_KEY": {
+				"description": "Encrypts notification credentials (bot tokens, webhook URLs) at rest. Any long random string, e.g. the output of `openssl rand -base64 32`. Don't change it later or saved channels stop working."
+			},
+			"CF_TEAM_DOMAIN": {
+				"description": "Optional. Your Cloudflare Access team domain, e.g. `https://yourteam.cloudflareaccess.com`. Set it together with `CF_AUD_TOKEN` to sign in to `/admin` with Access instead of a password."
+			},
+			"CF_AUD_TOKEN": {
+				"description": "Optional. The **Application Audience (AUD) tag** of the Access application protecting `/admin`."
+			}
+		}
+	},
+	"devDependencies": {
+		"@sveltejs/adapter-cloudflare": "^7.2.9",
+		"@sveltejs/kit": "^2.70.3",
+		"@sveltejs/vite-plugin-svelte": "^7.3.1",
+		"@types/node": "^24.19.0",
+		"svelte": "^5.57.1",
+		"svelte-check": "^4.7.6",
+		"typescript": "^6.0.3",
+		"vite": "^8.3.1",
+		"vitest": "^4.1.11",
+		"wrangler": "^4.142.0"
+	},
+	"dependencies": {
+		"jose": "^6.2.12"
+	}
+}

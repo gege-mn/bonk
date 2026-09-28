@@ -1,0 +1,8 @@
+# Password for /admin when Cloudflare Access is not configured.
+ADMIN_PASSWORD=
+# Encrypts notification credentials at rest. `openssl rand -base64 32`
+ENCRYPTION_KEY=
+# Optional: sign in with Cloudflare Access instead of a password. Leave all of these
+# blank that you don't use; with Access configured, ADMIN_PASSWORD is ignored.
+CF_TEAM_DOMAIN=
+CF_AUD_TOKEN=

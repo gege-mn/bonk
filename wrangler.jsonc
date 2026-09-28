@@ -1,0 +1,25 @@
+{
+	"$schema": "./node_modules/wrangler/config-schema.json",
+	"name": "bonk",
+	"compatibility_date": "2026-09-27",
+	"compatibility_flags": ["nodejs_als"],
+	// SvelteKit serves pages; worker/index.ts adds the cron handler that runs the checks.
+	"main": "./worker/index.ts",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	},
+	"triggers": {
+		"crons": ["* * * * *"]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "bonk",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+	"observability": { "enabled": true },
+	"workers_dev": true
+}

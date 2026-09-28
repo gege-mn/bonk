@@ -1,0 +1,12 @@
+// Read only by @sveltejs/adapter-cloudflare at build time. The adapter writes its
+// worker to `main`, so it gets its own path; wrangler.jsonc's entry (worker/index.ts)
+// wraps that worker and adds the cron handler. Deploys use wrangler.jsonc.
+{
+	"name": "bonk",
+	"compatibility_date": "2026-09-27",
+	"main": ".svelte-kit/cloudflare/_worker.js",
+	"assets": {
+		"binding": "ASSETS",
+		"directory": ".svelte-kit/cloudflare"
+	}
+}
