@@ -2,6 +2,7 @@
 	import { fmtDate, fmtDuration, fmtTime } from '$lib/format';
 
 	let { data, form } = $props();
+	const minSeconds = $derived(data.appearance.rules.minIncidentMin * 60);
 </script>
 
 <div class="layout">
@@ -21,7 +22,11 @@
 							{#if i.resolved_at}· {fmtDuration(i.resolved_at - i.started_at)}{/if}
 							{#if i.monitor_name}· {i.monitor_name}{/if}
 							{#if i.auto}· automatic{/if}
-							{#if !i.public}· hidden from status page{/if}
+							{#if !i.public}
+								· hidden from status page
+							{:else if i.auto && i.resolved_at && i.resolved_at - i.started_at < minSeconds}
+								· too short for the status page
+							{/if}
 						</span>
 					</span>
 				</a>

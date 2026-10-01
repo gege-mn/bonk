@@ -3,7 +3,7 @@ import { isSealed, open } from './crypto';
 import { sendAlert } from './notify';
 import type { Alert } from './notify/types';
 import { getSetting, normalizeSite, type Site } from './settings';
-import { appendRecent, applyResult, dayStart, hourStart, shouldAlert } from './status';
+import { appendRecent, applyResult, dayStart, decodeRecent, hourStart, shouldAlert, tallyResult, unconfirmedByHour } from './status';
 import type { BonkEnv, Channel, CheckResult, Maintenance, Monitor, MonitorState } from './types';
 
 type Row = Monitor & Partial<Omit<MonitorState, 'monitor_id'>>;
@@ -117,6 +117,33 @@ export function accumulate(db: D1Database, s: MonitorState, result: CheckResult,
 	return stmts;
 }
 
+/**
+ * On confirmation, moves the `count` checks before this one from up to `to`. Call after
+ * `accumulate`: the running hour is fixed in place, already-flushed hours with statements.
+ */
+export function recountUnconfirmed(db: D1Database, s: MonitorState, prevRecent: string, count: number, to: 'degraded' | 'down') {
+	const stmts: D1PreparedStatement[] = [];
+	const col = to === 'down' ? 'down' : 'deg';
+	for (const [hour, k] of unconfirmedByHour(decodeRecent(prevRecent), count)) {
+		if (hour === s.h_start) {
+			const moved = Math.min(k, s.h_up);
+			s.h_up -= moved;
+			if (to === 'down') s.h_down += moved;
+			else s.h_deg += moved;
+			continue;
+		}
+		stmts.push(
+			db
+				.prepare(`UPDATE hourly SET up = up - ?1, ${col} = ${col} + ?1 WHERE monitor_id = ?2 AND hour = ?3 AND up >= ?1`)
+				.bind(k, s.monitor_id, hour),
+			db
+				.prepare(`UPDATE daily SET up = up - ?1, ${col} = ${col} + ?1 WHERE monitor_id = ?2 AND day = ?3 AND up >= ?1`)
+				.bind(k, s.monitor_id, dayStart(hour))
+		);
+	}
+	return stmts;
+}
+
 export function saveStateStmt(db: D1Database, s: MonitorState) {
 	return db
 		.prepare(upsertState)
@@ -202,7 +229,14 @@ export async function tick(
 			last_message: out.message,
 			recent: appendRecent(s.recent, { ts: now, result: out.result, latency: out.latency })
 		});
-		writes.push(...accumulate(db, s, out.result, out.latency, now));
+		writes.push(...accumulate(db, s, tallyResult(next.status, out.result), out.latency, now));
+		const confirmed = next.transition && next.transition.to !== 'up' ? next.transition : null;
+		// Trouble began with the first failed check of the streak, not when it was confirmed.
+		let troubleSince = now;
+		if (confirmed && (confirmed.from === 'up' || confirmed.from === 'pending')) {
+			writes.push(...recountUnconfirmed(db, s, prev.recent, next.streak - 1, confirmed.to as 'degraded' | 'down'));
+			if (next.streak > 1) troubleSince = decodeRecent(prev.recent).slice(1 - next.streak)[0]?.ts ?? now;
+		}
 
 		const inMaintenance = activeMaintenance(maint, row.id, now);
 		const channelIds = links.filter((l) => l.monitor_id === row.id && channels.has(l.channel_id)).map((l) => l.channel_id);
@@ -221,7 +255,7 @@ export async function tick(
 					.bind(row.id, now, t.to, t.from === 'pending' && t.to === 'up' ? 'First check passed' : out.message)
 			);
 			// Recoveries always close their incident; only opening one is muted by maintenance.
-			if (!inMaintenance || t.to === 'up') await syncIncident(db, row, s, t.to, prev.since, now, out.message);
+			if (!inMaintenance || t.to === 'up') await syncIncident(db, row, s, t.to, prev.since, now, out.message, troubleSince);
 			if (shouldAlert(t) && !inMaintenance) {
 				pending.push({
 					alert: {
@@ -316,7 +350,8 @@ async function openOrCloseIncident(
 	to: CheckResult,
 	prevSince: number | null,
 	now: number,
-	rawReason: string
+	rawReason: string,
+	startedAt = now
 ) {
 	const reason = publicReason(rawReason);
 	if (to === 'up') {
@@ -350,7 +385,7 @@ async function openOrCloseIncident(
 		.prepare(
 			"INSERT INTO incidents (monitor_id, title, severity, status, auto, public, started_at) VALUES (?, ?, ?, 'investigating', 1, ?, ?) RETURNING id"
 		)
-		.bind(m.id, title, to, m.public, now)
+		.bind(m.id, title, to, m.public, startedAt)
 		.first<{ id: number }>();
 	if (!inc) return;
 	s.incident_id = inc.id;

@@ -45,6 +45,15 @@
 		</div>
 	</aside>
 	<main class="main">
+		{#if data.checkerStale}
+			<div class="notice notice-warn t-small checker">
+				<span>
+					<strong>{data.checkerLastRun ? 'The checker has stopped running.' : "The checker hasn't run yet."}</strong>
+					Checks run on a Cloudflare Cron Trigger, which can take up to 15 minutes to start after the first deploy.
+					If it stays like this, re-apply the trigger with <code>pnpm wrangler triggers deploy</code> (see the README).
+				</span>
+			</div>
+		{/if}
 		{#if data.encryptionMissing}
 			<div class="notice notice-warn t-small">
 				<span><strong>ENCRYPTION_KEY is not set.</strong> Notification credentials are stored unencrypted. Add it under

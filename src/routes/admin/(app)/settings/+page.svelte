@@ -21,6 +21,17 @@
 			</label>
 		</fieldset>
 		<fieldset class="stack">
+			<legend class="legend">Short blips</legend>
+			<label class="field">
+				Ignore trouble shorter than (minutes)
+				<input class="input narrow" type="number" name="min_incident_min" min="0" max="1440" value={data.appearance.rules.minIncidentMin} />
+				<span class="help">
+					Automatic incidents that recover sooner stay off the status page, and a day only changes color once its failed
+					checks add up to this long. They still alert you and stay in the admin. 0 shows everything.
+				</span>
+			</label>
+		</fieldset>
+		<fieldset class="stack">
 			<legend class="legend">Header links</legend>
 			{#each links as l, i (i)}
 				<div class="link">
@@ -81,6 +92,9 @@
 		display: grid;
 		grid-template-columns: 160px minmax(0, 1fr);
 		gap: 10px;
+	}
+	.narrow {
+		max-width: 120px;
 	}
 	.panel h2 {
 		font-size: 16px;

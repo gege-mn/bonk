@@ -97,10 +97,36 @@ export function formatPct(p: number | null): string {
 	return `${(Math.floor(p * 100) / 100).toFixed(2)}%`;
 }
 
-/** A day with a stray failed check reads as degraded, not down, so the bars aren't all alarm. */
-export function barStatus(d: { n: number; deg: number; down: number }): 'up' | 'degraded' | 'down' | 'none' {
+/**
+ * What a raw result adds to the uptime totals. Failures only count once the monitor is
+ * confirmed down/degraded, so a blip shorter than `alert_after` checks never shows in history.
+ */
+export function tallyResult(status: Status, result: CheckResult): CheckResult {
+	return status === 'down' || status === 'degraded' ? result : 'up';
+}
+
+/**
+ * The failures that led up to a confirmation were tallied as up while still unconfirmed.
+ * Returns how many of them fall in each hour so the totals can be corrected.
+ */
+export function unconfirmedByHour(recent: RecentCheck[], count: number): Map<number, number> {
+	const out = new Map<number, number>();
+	if (count <= 0) return out;
+	for (const c of recent.slice(-count)) out.set(hourStart(c.ts), (out.get(hourStart(c.ts)) ?? 0) + 1);
+	return out;
+}
+
+/** How many failed checks add up to `minutes` of trouble at this check interval; never less than one. */
+export function minBadChecks(minutes: number, intervalS: number): number {
+	return Math.max(1, Math.ceil((minutes * 60) / Math.max(1, intervalS)));
+}
+
+/**
+ * A day only changes color once its failed and slow checks add up to `minBad`, so a short
+ * confirmed outage stays green. Past that, under 1% down reads as degraded, not down.
+ */
+export function barStatus(d: { n: number; deg: number; down: number }, minBad = 1): 'up' | 'degraded' | 'down' | 'none' {
 	if (!d.n) return 'none';
-	if (d.down / d.n >= 0.01) return 'down';
-	if (d.down > 0 || d.deg / d.n >= 0.01) return 'degraded';
-	return 'up';
+	if (d.down + d.deg < minBad) return 'up';
+	return d.down / d.n >= 0.01 ? 'down' : 'degraded';
 }

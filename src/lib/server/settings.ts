@@ -62,15 +62,32 @@ export function normalizeSite(input: unknown): Site {
 	};
 }
 
+export interface Rules {
+	/** Trouble shorter than this many minutes stays off the status page; 0 shows everything. */
+	minIncidentMin: number;
+}
+
+export const DEFAULT_RULES: Rules = { minIncidentMin: 5 };
+
+export function normalizeRules(input: unknown): Rules {
+	const r = (input && typeof input === 'object' ? input : {}) as Partial<Rules>;
+	const raw = r.minIncidentMin as unknown;
+	const n = raw === null || raw === undefined || raw === '' ? NaN : Number(raw);
+	return {
+		minIncidentMin: Number.isFinite(n) ? Math.min(1440, Math.max(0, Math.round(n))) : DEFAULT_RULES.minIncidentMin
+	};
+}
+
 export interface Appearance {
 	site: Site;
 	theme: Theme;
+	rules: Rules;
 	logoVersion: number;
 }
 
 export async function getAppearance(db: D1Database): Promise<Appearance> {
 	const { results } = await db
-		.prepare("SELECT key, value FROM settings WHERE key IN ('site', 'theme', 'logo_version')")
+		.prepare("SELECT key, value FROM settings WHERE key IN ('site', 'theme', 'rules', 'logo_version')")
 		.all<{ key: string; value: string }>();
 	const map = new Map(results.map((r) => [r.key, r.value]));
 	const parse = (k: string) => {
@@ -83,6 +100,7 @@ export async function getAppearance(db: D1Database): Promise<Appearance> {
 	return {
 		site: normalizeSite(parse('site')),
 		theme: map.has('theme') ? normalizeTheme(parse('theme')) : DEFAULT_THEME,
+		rules: normalizeRules(parse('rules')),
 		logoVersion: Number(parse('logo_version')) || 0
 	};
 }

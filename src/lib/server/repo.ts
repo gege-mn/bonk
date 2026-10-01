@@ -1,5 +1,6 @@
 import { emptyState } from './engine';
-import { barStatus, dayStart, decodeRecent, formatPct, hourStart, uptimePct } from './status';
+import { getSetting, normalizeRules, type Rules } from './settings';
+import { barStatus, dayStart, decodeRecent, formatPct, hourStart, minBadChecks, uptimePct } from './status';
 import type { Incident, IncidentUpdate, Maintenance, Monitor, MonitorState, Status } from './types';
 
 export type Bar = { day: number; n: number; deg: number; down: number; status: ReturnType<typeof barStatus> };
@@ -42,13 +43,23 @@ function dailyWithLive(rows: DayRow[], states: Map<number, MonitorState>, now: n
 	return out;
 }
 
-function bars(days: Map<number, DayRow> | undefined, count: number, now: number): Bar[] {
+/** Push monitors are evaluated every minute whatever their interval says (see `isDue`). */
+function minBadFor(m: Pick<Monitor, 'type' | 'interval_s'>, rules: Rules): number {
+	return minBadChecks(rules.minIncidentMin, m.type === 'push' ? 60 : m.interval_s);
+}
+
+/** Automatic incidents that cleared themselves quickly are noise in the public list; their links still work. */
+export function isBlip(i: Pick<Incident, 'auto' | 'started_at' | 'resolved_at'>, rules: Rules): boolean {
+	return !!i.auto && i.resolved_at !== null && i.resolved_at - i.started_at < rules.minIncidentMin * 60;
+}
+
+function bars(days: Map<number, DayRow> | undefined, count: number, now: number, minBad: number): Bar[] {
 	const today = dayStart(now);
 	return Array.from({ length: count }, (_, i) => {
 		const day = today - (count - 1 - i) * 86400;
 		const d = days?.get(day);
 		const v = { n: d?.n ?? 0, deg: d?.deg ?? 0, down: d?.down ?? 0 };
-		return { day, ...v, status: barStatus(v) };
+		return { day, ...v, status: barStatus(v, minBad) };
 	});
 }
 
@@ -83,7 +94,7 @@ export interface PublicMonitor {
 
 export async function publicStatus(db: D1Database, now = Math.floor(Date.now() / 1000)) {
 	const since = dayStart(now) - 89 * 86400;
-	const [mons, states, days, open, past, maint] = await Promise.all([
+	const [mons, states, days, open, past, maint, rawRules] = await Promise.all([
 		db.prepare('SELECT * FROM monitors WHERE public = 1 ORDER BY sort, id').all<Monitor>(),
 		statesFor(db, 'JOIN monitors m ON m.id = s.monitor_id WHERE m.public = 1'),
 		db
@@ -92,14 +103,16 @@ export async function publicStatus(db: D1Database, now = Math.floor(Date.now() /
 			.all<DayRow>(),
 		db.prepare('SELECT * FROM incidents WHERE public = 1 AND resolved_at IS NULL ORDER BY started_at DESC').all<Incident>(),
 		db
-			.prepare('SELECT * FROM incidents WHERE public = 1 AND resolved_at IS NOT NULL AND started_at > ? ORDER BY started_at DESC LIMIT 10')
+			.prepare('SELECT * FROM incidents WHERE public = 1 AND resolved_at IS NOT NULL AND started_at > ? ORDER BY started_at DESC LIMIT 200')
 			.bind(now - 30 * 86400)
 			.all<Incident>(),
 		db
 			.prepare('SELECT * FROM maintenance WHERE ends_at > ? AND starts_at < ? ORDER BY starts_at')
 			.bind(now, now + 7 * 86400)
-			.all<Maintenance>()
+			.all<Maintenance>(),
+		getSetting<Rules>(db, 'rules')
 	]);
+	const rules = normalizeRules(rawRules);
 	const byDay = dailyWithLive(days.results, states, now);
 	const activeMaint = maint.results.filter((m) => m.starts_at <= now);
 
@@ -115,7 +128,7 @@ export async function publicStatus(db: D1Database, now = Math.floor(Date.now() /
 			group: m.group_name,
 			status: m.paused ? 'paused' : inMaint ? 'maintenance' : (s?.status ?? 'pending'),
 			uptime: formatPct(totals(byDay.get(m.id), since).uptime),
-			bars: bars(byDay.get(m.id), 90, now)
+			bars: bars(byDay.get(m.id), 90, now, minBadFor(m, rules))
 		};
 	});
 
@@ -131,7 +144,7 @@ export async function publicStatus(db: D1Database, now = Math.floor(Date.now() /
 		monitors,
 		groups,
 		openIncidents: open.results.map((i) => ({ ...i, updates: updates.get(i.id) ?? [] })),
-		pastIncidents: past.results,
+		pastIncidents: past.results.filter((i) => !isBlip(i, rules)).slice(0, 10),
 		maintenance: maint.results.map((m) => ({ ...m, active: m.starts_at <= now })),
 		checkedAt: Math.max(0, ...[...states.values()].map((s) => s.last_check_at ?? 0)) || null
 	};
@@ -214,7 +227,7 @@ export async function monitorDetail(db: D1Database, id: number, now = Math.floor
 		days: [...(byDay?.values() ?? [])]
 			.sort((a, b) => a.day - b.day)
 			.map((d) => ({ ts: d.day, avg: d.lat_n ? Math.round(d.lat_sum / d.lat_n) : null, n: d.n, down: d.down })),
-		bars: bars(byDay, 90, now),
+		bars: bars(byDay, 90, now, 1),
 		uptime24: formatPct(
 			uptimePct(
 				hours.filter((h) => h.hour >= hourStart(now) - 23 * 3600).reduce((a, h) => a + h.n, 0),

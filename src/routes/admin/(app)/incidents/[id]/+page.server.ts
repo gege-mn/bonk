@@ -24,7 +24,8 @@ export const actions: Actions = {
 		await db.batch([
 			db.prepare('INSERT INTO incident_updates (incident_id, ts, status, body) VALUES (?, ?, ?, ?)').bind(id, now, status, body),
 			db
-				.prepare('UPDATE incidents SET status = ?, resolved_at = CASE WHEN ? = \'resolved\' THEN coalesce(resolved_at, ?) ELSE NULL END WHERE id = ?')
+				// A hand-written update makes it yours: no longer hidden as a short automatic blip.
+				.prepare('UPDATE incidents SET auto = 0, status = ?, resolved_at = CASE WHEN ? = \'resolved\' THEN coalesce(resolved_at, ?) ELSE NULL END WHERE id = ?')
 				.bind(status, status, now, id),
 			// A manually resolved incident must not stay attached to the monitor's state.
 			db.prepare("UPDATE monitor_state SET incident_id = NULL WHERE incident_id = ? AND ? = 'resolved'").bind(id, status)

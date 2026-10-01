@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import { authMode } from '$lib/server/auth';
-import { normalizeSite, setSetting } from '$lib/server/settings';
+import { normalizeRules, normalizeSite, setSettingStmt } from '$lib/server/settings';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ platform, url }) => {
@@ -26,7 +26,9 @@ export const actions: Actions = {
 			links: labels.map((label, i) => ({ label, href: hrefs[i] ?? '' }))
 		});
 		if (!String(fd.get('name') ?? '').trim()) return fail(400, { error: 'The name can’t be empty.' });
-		await setSetting(platform!.env.DB, 'site', site);
+		const db = platform!.env.DB;
+		const rules = normalizeRules({ minIncidentMin: fd.get('min_incident_min') });
+		await db.batch([setSettingStmt(db, 'site', site), setSettingStmt(db, 'rules', rules)]);
 		return { saved: true };
 	}
 };

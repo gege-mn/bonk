@@ -1,8 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { parseHostPort, readPath } from './checks';
 import { open, seal } from './crypto';
-import { checkSvg, normalizeSite } from './settings';
-import { appendRecent, applyResult, barStatus, decodeRecent, formatPct, parseExpected, RECENT_MAX, shouldAlert } from './status';
+import { recountUnconfirmed, emptyState } from './engine';
+import { isBlip } from './repo';
+import { checkSvg, normalizeRules, normalizeSite } from './settings';
+import {
+	appendRecent,
+	applyResult,
+	barStatus,
+	decodeRecent,
+	formatPct,
+	minBadChecks,
+	parseExpected,
+	RECENT_MAX,
+	shouldAlert,
+	tallyResult,
+	unconfirmedByHour
+} from './status';
 import { contrast, DEFAULT_THEME, normalizeTheme, themeCss } from '../theme';
 import { headline } from '../headline';
 
@@ -77,10 +91,89 @@ describe('bars and percentages', () => {
 		expect(barStatus({ n: 1440, deg: 0, down: 30 })).toBe('down');
 		expect(barStatus({ n: 0, deg: 0, down: 0 })).toBe('none');
 	});
+	it('leaves a day green until failures add up to the minimum', () => {
+		const min = minBadChecks(5, 60);
+		expect(min).toBe(5);
+		expect(barStatus({ n: 1440, deg: 0, down: 3 }, min)).toBe('up');
+		expect(barStatus({ n: 1440, deg: 0, down: 5 }, min)).toBe('degraded');
+		expect(barStatus({ n: 1440, deg: 0, down: 30 }, min)).toBe('down');
+		expect(barStatus({ n: 1440, deg: 4, down: 0 }, min)).toBe('up');
+		expect(barStatus({ n: 1440, deg: 5, down: 0 }, min)).toBe('degraded');
+		// Failed and slow checks add up together.
+		expect(barStatus({ n: 1440, deg: 3, down: 2 }, min)).toBe('degraded');
+		expect(barStatus({ n: 1440, deg: 2, down: 2 }, min)).toBe('up');
+	});
+	it('turns minutes into checks for any interval', () => {
+		expect(minBadChecks(5, 300)).toBe(1);
+		expect(minBadChecks(5, 120)).toBe(3);
+		expect(minBadChecks(0, 60)).toBe(1);
+	});
 	it('never rounds up to 100%', () => {
 		expect(formatPct(99.999)).toBe('100%');
 		expect(formatPct(99.989)).toBe('99.98%');
 		expect(formatPct(null)).toBe('—');
+	});
+});
+
+describe('confirmed-only totals', () => {
+	it('counts a failure only while the monitor is confirmed failing', () => {
+		expect(tallyResult('up', 'down')).toBe('up');
+		expect(tallyResult('up', 'degraded')).toBe('up');
+		expect(tallyResult('pending', 'down')).toBe('up');
+		expect(tallyResult('down', 'down')).toBe('down');
+		expect(tallyResult('down', 'degraded')).toBe('degraded');
+		expect(tallyResult('up', 'up')).toBe('up');
+	});
+
+	it('a blip shorter than alert_after never reaches the totals', () => {
+		let s: Parameters<typeof applyResult>[0] = { status: 'up', since: 0, streak_status: 'up', streak: 9 };
+		const tallied = (['degraded', 'degraded', 'up'] as const).map((r, i) => {
+			const next = applyResult(s, r, 3, i);
+			s = next;
+			return tallyResult(next.status, r);
+		});
+		expect(tallied).toEqual(['up', 'up', 'up']);
+	});
+
+	it('groups the checks before a confirmation by hour', () => {
+		const recent = [3500, 3560, 3620, 3680].map((ts) => ({ ts, result: 'down' as const, latency: null }));
+		expect([...unconfirmedByHour(recent, 3)]).toEqual([
+			[0, 1],
+			[3600, 2]
+		]);
+		expect(unconfirmedByHour(recent, 0).size).toBe(0);
+	});
+
+	it('recounts the running hour in place and older hours with statements', () => {
+		const binds: unknown[][] = [];
+		const db = { prepare: () => ({ bind: (...a: unknown[]) => (binds.push(a), {}) }) } as unknown as D1Database;
+		const s = { ...emptyState(7), h_start: 3600, h_n: 2, h_up: 2 };
+		const stmts = recountUnconfirmed(db, s, '3560:x:;3620:x:', 2, 'down');
+		expect([s.h_up, s.h_down]).toEqual([1, 1]);
+		expect(stmts).toHaveLength(2);
+		expect(binds).toEqual([
+			[1, 7, 0],
+			[1, 7, 0]
+		]);
+	});
+});
+
+describe('short incidents', () => {
+	const rules = normalizeRules({ minIncidentMin: 5 });
+	it('hides automatic incidents that cleared quickly', () => {
+		expect(isBlip({ auto: 1, started_at: 0, resolved_at: 60 }, rules)).toBe(true);
+		expect(isBlip({ auto: 1, started_at: 0, resolved_at: 300 }, rules)).toBe(false);
+	});
+	it('never hides open or hand-written incidents', () => {
+		expect(isBlip({ auto: 1, started_at: 0, resolved_at: null }, rules)).toBe(false);
+		expect(isBlip({ auto: 0, started_at: 0, resolved_at: 60 }, rules)).toBe(false);
+	});
+	it('defaults to five minutes and clamps the setting', () => {
+		expect(normalizeRules(null).minIncidentMin).toBe(5);
+		expect(normalizeRules({ minIncidentMin: '0' }).minIncidentMin).toBe(0);
+		expect(normalizeRules({ minIncidentMin: '' }).minIncidentMin).toBe(5);
+		expect(normalizeRules({ minIncidentMin: 99999 }).minIncidentMin).toBe(1440);
+		expect(normalizeRules({ minIncidentMin: 'abc' }).minIncidentMin).toBe(5);
 	});
 });
 
