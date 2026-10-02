@@ -15,8 +15,9 @@
 	let {
 		monitor = null,
 		selected = null,
+		selectedPages = null,
 		channels,
-		groups,
+		pages,
 		pushUrl = null,
 		form,
 		cancelHref
@@ -24,9 +25,11 @@
 		monitor?: object | null;
 		selected?: number[] | null;
 		channels: { id: number; name: string; provider: string; default_on: number }[];
-		groups: string[];
+		/** Ids of the status pages this monitor is on; null for a new monitor, which starts on the default page. */
+		selectedPages?: number[] | null;
+		pages: { id: number; name: string; public: number; is_default: number }[];
 		pushUrl?: string | null;
-		form: { values?: Values; errors?: Record<string, string>; channelIds?: number[]; test?: Test | null; testError?: string | null } | null;
+		form: { values?: Values; errors?: Record<string, string>; channelIds?: number[]; pageIds?: number[]; test?: Test | null; testError?: string | null } | null;
 		cancelHref: string;
 	} = $props();
 
@@ -78,10 +81,7 @@
 		alert_after: 3,
 		resend_min: 0,
 		paused: 0,
-		public: 1,
-		public_name: '',
-		group_name: '',
-		sort: 0
+		public_name: ''
 	};
 
 	function initial(): Values {
@@ -93,6 +93,7 @@
 	const on = (k: string) => Boolean(Number(v[k]));
 
 	const chosen = untrack(() => new Set(form?.channelIds ?? selected ?? channels.filter((c) => c.default_on).map((c) => c.id)));
+	const onPages = untrack(() => new Set(form?.pageIds ?? selectedPages ?? pages.filter((p) => p.is_default).map((p) => p.id)));
 	const err = $derived(form?.errors ?? {});
 	const isHttp = $derived(type === 'http' || type === 'keyword' || type === 'json');
 	let busy = $state<string | null>(null);
@@ -275,27 +276,24 @@
 			<a href="/admin/notifications" class="t-small">Add a channel</a>
 		</fieldset>
 
-		<fieldset class="grid2">
-			<legend class="legend">Status page</legend>
-			<div class="field wide">
-				<label class="check"><input type="checkbox" name="public" checked={on('public')} />Show on the public status page</label>
-				<span class="help">Unchecked, the monitor is private: it only appears on the signed-in page at <a href="/private">/private</a>. Alerts are sent either way.</span>
-			</div>
-			<label class="field">
-				Group
-				<input class="input" name="group_name" value={s('group_name')} list="groups" placeholder="e.g. API" />
-				<datalist id="groups">{#each groups as g (g)}<option value={g}></option>{/each}</datalist>
-			</label>
+		<fieldset class="stack">
+			<legend class="legend">Status pages</legend>
+			{#each pages as p (p.id)}
+				<label class="check check-box">
+					<input type="checkbox" name="pages" value={p.id} checked={onPages.has(p.id)} />
+					{p.name}<span class="t-muted t-small">· {p.public ? 'public' : 'private'}</span>
+				</label>
+			{/each}
+			<span class="help">
+				Alerts are sent whether or not it's on a page. Group, order and per-page names are set on each page under
+				<a href="/admin/pages">Status pages</a>.
+			</span>
 			<label class="field">
 				Public name
 				<input class="input" name="public_name" value={s('public_name')} placeholder="Defaults to the name" />
+				<span class="help">Shown on status pages and in incident titles instead of the name above.</span>
 			</label>
-			<label class="field">
-				Order
-				<input class="input" name="sort" inputmode="numeric" value={s('sort')} />
-				<span class="help">Lower numbers come first.</span>
-			</label>
-			<label class="check align-end"><input type="checkbox" name="paused" checked={on('paused')} />Paused</label>
+			<label class="check"><input type="checkbox" name="paused" checked={on('paused')} />Paused</label>
 		</fieldset>
 
 		<div class="bar">

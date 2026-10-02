@@ -1,6 +1,7 @@
 import { fail, redirect, type RequestEvent } from '@sveltejs/kit';
 import { runCheck } from './checks';
 import { MONITOR_COLUMNS, newPushToken, parseMonitorForm } from './forms';
+import { setMonitorPagesStmts } from './pages';
 import type { Monitor } from './types';
 
 export async function testAction({ request }: RequestEvent) {
@@ -16,8 +17,8 @@ export async function testAction({ request }: RequestEvent) {
 export async function saveMonitor(event: RequestEvent, id: number | null) {
 	const db = event.platform!.env.DB;
 	const fd = await event.request.formData();
-	const { values, errors, channelIds } = parseMonitorForm(fd);
-	if (Object.keys(errors).length) return fail(400, { errors, values, channelIds });
+	const { values, errors, channelIds, pageIds } = parseMonitorForm(fd);
+	if (Object.keys(errors).length) return fail(400, { errors, values, channelIds, pageIds });
 
 	const cols = MONITOR_COLUMNS;
 	const vals = cols.map((c) => values[c]);
@@ -46,22 +47,24 @@ export async function saveMonitor(event: RequestEvent, id: number | null) {
 			)
 			.bind(...vals, values.type, newPushToken(), id)
 			.run();
-		// Its automatic incidents follow it, so going private also takes its history off the public page.
-		await db.prepare('UPDATE incidents SET public = ? WHERE monitor_id = ? AND auto = 1').bind(values.public, id).run();
 	}
 	const valid = await db.prepare('SELECT id FROM channels').all<{ id: number }>();
 	const ids = channelIds.filter((c) => valid.results.some((v) => v.id === c));
 	await db.batch([
 		db.prepare('DELETE FROM monitor_channels WHERE monitor_id = ?').bind(monitorId),
-		...ids.map((c) => db.prepare('INSERT INTO monitor_channels (monitor_id, channel_id) VALUES (?, ?)').bind(monitorId, c))
+		...ids.map((c) => db.prepare('INSERT INTO monitor_channels (monitor_id, channel_id) VALUES (?, ?)').bind(monitorId, c)),
+		// Its incidents go wherever it goes, so leaving a page also takes its history off that page.
+		...setMonitorPagesStmts(db, monitorId!, pageIds)
 	]);
 	redirect(303, `/admin/monitors/${monitorId}`);
 }
 
 export async function formContext(db: D1Database) {
-	const [channels, groups] = await Promise.all([
+	const [channels, pages] = await Promise.all([
 		db.prepare('SELECT id, name, provider, default_on FROM channels ORDER BY name').all<{ id: number; name: string; provider: string; default_on: number }>(),
-		db.prepare("SELECT DISTINCT group_name FROM monitors WHERE group_name != '' ORDER BY group_name").all<{ group_name: string }>()
+		db
+			.prepare('SELECT id, name, public, is_default FROM pages ORDER BY is_default DESC, name COLLATE NOCASE, id')
+			.all<{ id: number; name: string; public: number; is_default: number }>()
 	]);
-	return { channels: channels.results, groups: groups.results.map((g) => g.group_name) };
+	return { channels: channels.results, pages: pages.results };
 }

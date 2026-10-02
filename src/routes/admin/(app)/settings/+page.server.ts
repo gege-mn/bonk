@@ -17,14 +17,7 @@ export const load: PageServerLoad = async ({ platform, url }) => {
 export const actions: Actions = {
 	site: async ({ request, platform }) => {
 		const fd = await request.formData();
-		const labels = fd.getAll('link_label').map(String);
-		const hrefs = fd.getAll('link_href').map(String);
-		const site = normalizeSite({
-			name: fd.get('name'),
-			description: fd.get('description'),
-			url: fd.get('url'),
-			links: labels.map((label, i) => ({ label, href: hrefs[i] ?? '' }))
-		});
+		const site = normalizeSite({ name: fd.get('name'), url: fd.get('url') });
 		if (!String(fd.get('name') ?? '').trim()) return fail(400, { error: 'The name can’t be empty.' });
 		const db = platform!.env.DB;
 		const rules = normalizeRules({ minIncidentMin: fd.get('min_incident_min') });

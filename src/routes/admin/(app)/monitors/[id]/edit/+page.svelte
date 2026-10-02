@@ -10,7 +10,8 @@
 	monitor={data.monitor}
 	selected={data.channelIds}
 	channels={data.channels}
-	groups={data.groups}
+	selectedPages={data.pageIds}
+	pages={data.pages}
 	pushUrl={data.monitor.push_token ? `${data.origin}/api/push/${data.monitor.push_token}` : null}
 	{form}
 	cancelHref="/admin/monitors/{data.monitor.id}"

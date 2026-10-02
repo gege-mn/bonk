@@ -1,13 +1,10 @@
 import { DEFAULT_THEME, normalizeTheme, type Theme } from '../theme';
 
+/** Instance-wide identity, used by the admin and in alerts. Status pages carry their own name and links. */
 export interface Site {
 	name: string;
-	/** Tagline under the status headline; empty hides it. */
-	description: string;
 	/** Absolute URL of this instance, used for links inside alerts. */
 	url: string;
-	/** Header links on the public page. */
-	links: { label: string; href: string }[];
 }
 
 export interface Logo {
@@ -17,7 +14,7 @@ export interface Logo {
 	updated: number;
 }
 
-export const DEFAULT_SITE: Site = { name: 'Bonk', description: '', url: '', links: [] };
+export const DEFAULT_SITE: Site = { name: 'Bonk', url: '' };
 
 // Placeholder mark until Bonk has its own. currentColor is swapped for the theme's ink when served.
 export const DEFAULT_LOGO_SVG =
@@ -51,14 +48,7 @@ export function normalizeSite(input: unknown): Site {
 	const url = str(s.url, 300).replace(/\/+$/, '');
 	return {
 		name: str(s.name, 60) || DEFAULT_SITE.name,
-		description: str(s.description, 300),
-		url: /^https?:\/\//.test(url) ? url : '',
-		links: Array.isArray(s.links)
-			? s.links
-					.map((l) => ({ label: str(l?.label, 40), href: str(l?.href, 300) }))
-					.filter((l) => l.label && /^(https?:|mailto:)/.test(l.href))
-					.slice(0, 5)
-			: []
+		url: /^https?:\/\//.test(url) ? url : ''
 	};
 }
 
@@ -83,6 +73,8 @@ export interface Appearance {
 	theme: Theme;
 	rules: Rules;
 	logoVersion: number;
+	/** Where the logo is served from, cache-busting version included. A status page swaps in its own. */
+	logo: string;
 }
 
 export async function getAppearance(db: D1Database): Promise<Appearance> {
@@ -97,12 +89,71 @@ export async function getAppearance(db: D1Database): Promise<Appearance> {
 			return null;
 		}
 	};
+	const logoVersion = Number(parse('logo_version')) || 0;
 	return {
 		site: normalizeSite(parse('site')),
 		theme: map.has('theme') ? normalizeTheme(parse('theme')) : DEFAULT_THEME,
 		rules: normalizeRules(parse('rules')),
-		logoVersion: Number(parse('logo_version')) || 0
+		logoVersion,
+		logo: `/brand/logo?v=${logoVersion}`
 	};
+}
+
+const LOGO_MIMES = ['image/svg+xml', 'image/png', 'image/webp'] as const;
+
+function sniffLogo(bytes: Uint8Array): Logo['mime'] | null {
+	if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return LOGO_MIMES[1];
+	if (String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' && String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP') return LOGO_MIMES[2];
+	const head = new TextDecoder().decode(bytes.slice(0, 512)).trimStart();
+	if (head.startsWith('<svg') || head.startsWith('<?xml') || head.startsWith('<!--')) return LOGO_MIMES[0];
+	return null;
+}
+
+/** Validates an uploaded logo. Returns the value to store, or a message for the form. */
+export async function readLogoUpload(file: FormDataEntryValue | null): Promise<{ logo: Logo } | { error: string }> {
+	if (!(file instanceof File) || file.size === 0) return { error: 'Choose a file.' };
+	if (file.size > LOGO_MAX_BYTES) return { error: `That file is ${Math.ceil(file.size / 1024)} KB; the limit is 64 KB.` };
+	const bytes = new Uint8Array(await file.arrayBuffer());
+	const mime = sniffLogo(bytes);
+	if (!mime) return { error: 'Use an SVG, PNG or WebP file.' };
+	if (mime === 'image/svg+xml') {
+		const problem = checkSvg(new TextDecoder().decode(bytes));
+		if (problem) return { error: problem };
+	}
+	let data = '';
+	for (let i = 0; i < bytes.length; i += 0x8000) data += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+	return { logo: { mime, data: btoa(data), updated: Date.now() } };
+}
+
+const HEX = /^#?[0-9a-f]{6}$/i;
+
+/** Serves a stored logo (or the built-in mark) as an image, drawn for the given theme. */
+export function logoResponse(logo: Logo | null, theme: Theme, url: URL): Response {
+	const palette = theme.mode === 'dark' ? theme.dark : theme.light;
+	// currentColor can't inherit through <img>, so bake the color in: ?color=<hex> or ?on=ink (drawn on ink).
+	const want = url.searchParams.get('color');
+	const color = want && HEX.test(want) ? `#${want.replace('#', '')}` : url.searchParams.get('on') === 'ink' ? palette.bg : palette.ink;
+
+	let body: BodyInit;
+	let type: string;
+	if (!logo) {
+		body = DEFAULT_LOGO_SVG.replaceAll('currentColor', color);
+		type = 'image/svg+xml';
+	} else if (logo.mime === 'image/svg+xml') {
+		body = new TextDecoder().decode(Uint8Array.from(atob(logo.data), (c) => c.charCodeAt(0))).replaceAll('currentColor', color);
+		type = 'image/svg+xml';
+	} else {
+		body = Uint8Array.from(atob(logo.data), (c) => c.charCodeAt(0));
+		type = logo.mime;
+	}
+	return new Response(body, {
+		headers: {
+			'content-type': type,
+			'cache-control': 'public, max-age=300',
+			'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+			'x-content-type-options': 'nosniff'
+		}
+	});
 }
 
 /**

@@ -4,15 +4,15 @@
 
 	let { data } = $props();
 	const i = $derived(data.incident);
-	const site = $derived(data.appearance.site);
+	const sp = $derived(data.statusPage);
 </script>
 
-<svelte:head><title>{i.title} · {site.name} status</title></svelte:head>
+<svelte:head><title>{i.title} · {sp.name} status</title></svelte:head>
 
 <div class="page">
-	<a href="/" class="brand">
-		<Logo size={26} version={data.appearance.logoVersion} />
-		<span class="t-heading">{site.name}</span>
+	<a href={sp.base || '/'} class="brand">
+		<Logo size={26} src={data.appearance.logo} />
+		<span class="t-heading">{sp.name}</span>
 		<span class="t-small t-muted">/ status</span>
 	</a>
 	<div class="head">
@@ -33,7 +33,7 @@
 			</li>
 		{/each}
 	</ol>
-	<a href="/" class="t-small">← All services</a>
+	<a href={sp.base || '/'} class="t-small">← All services</a>
 </div>
 
 <style>

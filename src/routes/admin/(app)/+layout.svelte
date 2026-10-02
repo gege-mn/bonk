@@ -6,6 +6,7 @@
 
 	const nav = [
 		{ href: '/admin', label: 'Monitors', icon: 'M3 12h4l3-8 4 16 3-8h4', match: (p: string) => p === '/admin' || p.startsWith('/admin/monitors') },
+		{ href: '/admin/pages', label: 'Status pages', icon: 'M4 4h16v16H4zM4 9h16M9 9v11', match: (p: string) => p.startsWith('/admin/pages') },
 		{ href: '/admin/incidents', label: 'Incidents', icon: 'M12 3l9 16H3zM12 10v4M12 17v.5', match: (p: string) => p.startsWith('/admin/incidents') },
 		{ href: '/admin/notifications', label: 'Notifications', icon: 'M6 16v-5a6 6 0 0 1 12 0v5l2 2H4zM10 21h4', match: (p: string) => p.startsWith('/admin/notifications') },
 		{ href: '/admin/maintenance', label: 'Maintenance', icon: 'M3 5h18v16H3zM3 10h18M8 3v4M16 3v4', match: (p: string) => p.startsWith('/admin/maintenance') },
@@ -19,7 +20,7 @@
 <div class="shell">
 	<aside class="side">
 		<a href="/admin" class="brand">
-			<Logo size={26} version={data.appearance.logoVersion} onInk />
+			<Logo size={26} src={data.appearance.logo} onInk />
 			<span class="t-heading brand-name">{data.appearance.site.name}</span>
 			<span class="t-small dim">/ uptime</span>
 		</a>
@@ -33,7 +34,6 @@
 			{/each}
 		</nav>
 		<a class="view" href="/" target="_blank" rel="noopener">View status page ↗</a>
-		<a class="view" href="/private" target="_blank" rel="noopener">Private status page ↗</a>
 		<div class="who t-xs">
 			{#if data.admin?.via === 'access'}
 				<span>{data.admin.email ?? 'Signed in'}</span>

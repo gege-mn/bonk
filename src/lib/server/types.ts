@@ -33,10 +33,8 @@ export interface Monitor {
 	alert_after: number;
 	resend_min: number;
 	paused: number;
-	public: number;
+	/** Name used on status pages and in incident titles, when the real one shouldn't be shown. */
 	public_name: string | null;
-	group_name: string;
-	sort: number;
 	created_at: number;
 }
 
@@ -70,6 +68,7 @@ export interface Incident {
 	severity: 'down' | 'degraded' | 'info';
 	status: 'investigating' | 'identified' | 'monitoring' | 'resolved';
 	auto: number;
+	/** 0 hides it from every status page. Which pages show it follows its monitor, or incident_pages without one. */
 	public: number;
 	started_at: number;
 	resolved_at: number | null;

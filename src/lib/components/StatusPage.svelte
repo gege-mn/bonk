@@ -4,42 +4,39 @@
 	import { fmtDate, fmtDuration, fmtTime, STATUS_LABEL } from '$lib/format';
 	import { headline } from '$lib/headline';
 
-	import type { publicStatus } from '$lib/server/repo';
+	import type { PageLink } from '$lib/server/pages';
+	import type { pageStatus } from '$lib/server/repo';
 	import type { Appearance } from '$lib/server/settings';
 
 	let {
 		appearance,
-		status: s,
-		gated = false
+		page: site,
+		status: s
 	}: {
-		appearance: Appearance;
-		status: Awaited<ReturnType<typeof publicStatus>>;
-		/** The signed-in page, which also lists private monitors and incidents. */
-		gated?: boolean;
+		appearance: Pick<Appearance, 'logo'>;
+		/** `base` prefixes the page's own links ('' for the default page); `private` pages are behind the sign-in. */
+		page: { name: string; description: string; links: PageLink[]; base: string; private: boolean };
+		status: Awaited<ReturnType<typeof pageStatus>>;
 	} = $props();
 
-	const site = $derived(appearance.site);
-	// Private incidents have no public page, so they open in the admin.
-	const incidentHref = (i: { id: number; public: number }) => (i.public ? `/incidents/${i.id}` : `/admin/incidents/${i.id}`);
 	const h = $derived(headline(s.monitors, s.openIncidents, s.maintenance.some((m) => m.active)));
 </script>
 
 <svelte:head>
-	<title>{site.name} status{gated ? ' · private' : ''}</title>
+	<title>{site.name} status{site.private ? ' · private' : ''}</title>
 	<meta name="description" content={site.description || `Live status of ${site.name} services.`} />
 </svelte:head>
 
 <div class="page">
 	<header class="top">
-		<a href={gated ? '/private' : '/'} class="brand">
-			<Logo size={30} version={appearance.logoVersion} />
+		<a href={site.base || '/'} class="brand">
+			<Logo size={30} src={appearance.logo} />
 			<span class="t-heading brand-name">{site.name}</span>
 			<span class="t-small t-muted">/ status</span>
-			{#if gated}<span class="tag s-paused">Private</span>{/if}
+			{#if site.private}<span class="tag s-paused">Private</span>{/if}
 		</a>
 		<nav class="links t-small">
 			{#if s.pastIncidents.length}<a href="#history">History</a>{/if}
-			{#if gated}<a href="/">Public page</a>{/if}
 			{#each site.links as l (l.href)}<a href={l.href}>{l.label}</a>{/each}
 		</nav>
 	</header>
@@ -79,7 +76,7 @@
 				<span class="t-small t-muted">since {fmtTime(inc.started_at)}</span>
 			</div>
 			<div class="incident-body">
-				<h2 class="t-heading incident-title"><a href={incidentHref(inc)}>{inc.title}</a></h2>
+				<h2 class="t-heading incident-title"><a href="{site.base}/incidents/{inc.id}">{inc.title}</a></h2>
 				<ol class="updates">
 					{#each inc.updates.slice(0, 3) as u (u.id)}
 						<li>
@@ -100,7 +97,7 @@
 					{#each g.monitors as m (m.id)}
 						<div class="row">
 							<div class="row-name">
-								<span class="t-heading name">{m.name}{#if m.private}<span class="t-xs t-muted private"> · private</span>{/if}</span>
+								<span class="t-heading name">{m.name}</span>
 								<span class="t-xs state state-{m.status}">{STATUS_LABEL[m.status]}</span>
 							</div>
 							<HistoryBars bars={m.bars} label="{m.name}: last 90 days" />
@@ -131,7 +128,7 @@
 			<h2 class="t-display t-display-m">Past incidents</h2>
 			<div>
 				{#each s.pastIncidents as i (i.id)}
-					<a class="past" href={incidentHref(i)}>
+					<a class="past" href="{site.base}/incidents/{i.id}">
 						<span class="t-muted">{fmtDate(i.started_at)}</span>
 						<span class="t-heading past-title">{i.title}</span>
 						<span class="t-muted dur">{i.resolved_at ? fmtDuration(i.resolved_at - i.started_at) : ''}</span>
@@ -143,7 +140,7 @@
 
 	<footer class="foot t-xs t-muted">
 		<span>Powered by <a href="https://github.com/gege-mn/bonk">Bonk</a> · open source, Apache-2.0</span>
-		<a href="/api/status.json">JSON</a>
+		<a href="{site.base}/api/status.json">JSON</a>
 	</footer>
 </div>
 
@@ -262,9 +259,6 @@
 	}
 	.name {
 		font-size: 17px;
-	}
-	.private {
-		font-weight: 400;
 	}
 	.state {
 		color: var(--bonk-muted);

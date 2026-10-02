@@ -55,6 +55,13 @@ export const actions: Actions = {
 		const id = Number(params.id);
 		await db.batch([
 			db.prepare('UPDATE incidents SET resolved_at = coalesce(resolved_at, unixepoch()), status = \'resolved\' WHERE monitor_id = ?').bind(id),
+			// Its incidents lose their monitor, so pin them to the pages it was on or its history would vanish from them.
+			db
+				.prepare(
+					`INSERT OR IGNORE INTO incident_pages (incident_id, page_id)
+					SELECT i.id, pm.page_id FROM incidents i JOIN page_monitors pm ON pm.monitor_id = i.monitor_id WHERE i.monitor_id = ?`
+				)
+				.bind(id),
 			db.prepare('DELETE FROM monitors WHERE id = ?').bind(id)
 		]);
 		redirect(303, '/admin');

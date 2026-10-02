@@ -326,13 +326,16 @@ async function safeBatch(db: D1Database, stmts: D1PreparedStatement[]) {
 	}
 }
 
-/** Check output can echo response bodies or internal hostnames; incidents are public. */
+/** Check output can echo response bodies or internal hostnames; incidents show on status pages. */
 export function publicReason(msg: string): string {
 	if (/^(HTTP \d{3}|Timed out|Port \d+|No ping|Resolver returned|DNS [A-Z]+$|No [A-Z]+ records$)/.test(msg) || /slow above/.test(msg)) {
 		return msg;
 	}
 	return 'the health check failed';
 }
+
+/** Title of an automatic incident. Status pages rebuild it with their own name for the monitor. */
+export const autoTitle = (label: string, severity: string) => (severity === 'down' ? `${label} is down` : `${label} is responding slowly`);
 
 async function syncIncident(...args: Parameters<typeof openOrCloseIncident>) {
 	try {
@@ -368,8 +371,7 @@ async function openOrCloseIncident(
 		s.incident_id = null;
 		return;
 	}
-	const label = m.public_name || m.name;
-	const title = to === 'down' ? `${label} is down` : `${label} is responding slowly`;
+	const title = autoTitle(m.public_name || m.name, to);
 	if (s.incident_id) {
 		await db.batch([
 			db
@@ -383,9 +385,9 @@ async function openOrCloseIncident(
 	}
 	const inc = await db
 		.prepare(
-			"INSERT INTO incidents (monitor_id, title, severity, status, auto, public, started_at) VALUES (?, ?, ?, 'investigating', 1, ?, ?) RETURNING id"
+			"INSERT INTO incidents (monitor_id, title, severity, status, auto, public, started_at) VALUES (?, ?, ?, 'investigating', 1, 1, ?) RETURNING id"
 		)
-		.bind(m.id, title, to, m.public, startedAt)
+		.bind(m.id, title, to, startedAt)
 		.first<{ id: number }>();
 	if (!inc) return;
 	s.incident_id = inc.id;

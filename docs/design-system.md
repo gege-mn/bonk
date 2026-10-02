@@ -1,6 +1,6 @@
 # Bonk design system
 
-Bonk's look is data. Every screen, the public status page and the admin alike, reads color, type and shape only from `--bonk-*` CSS custom properties. Those come from one **theme** object stored in D1 and edited under **Admin → Settings → Appearance**. Change the theme and everything follows; no rebuild is needed.
+Bonk's look is data. Every screen, the status pages and the admin alike, reads color, type and shape only from `--bonk-*` CSS custom properties. Those come from a **theme** object stored in D1. The site's theme is edited under **Admin → Settings → Appearance** and styles the admin and every status page that hasn't set its own; a page can override it under **Admin → Status pages → (page) → Appearance**. Change a theme and everything using it follows; no rebuild is needed.
 
 - Tokens, presets and validation: [`src/lib/theme.ts`](../src/lib/theme.ts)
 - Components (plain CSS classes): [`src/lib/styles/bonk.css`](../src/lib/styles/bonk.css)
@@ -85,7 +85,7 @@ Status classes (`.s-*`) set `--s` (fill) and `--on` (text on fill), so any compo
 
 ## Logo
 
-Stored in D1 (≤ 64 KB; SVG, PNG or WebP) and served from `/brand/logo`.
+Stored in D1 (≤ 64 KB; SVG, PNG or WebP) and served from `/brand/logo`. A status page can upload its own, served from `/<slug>/logo` (`/logo` for the default page); without one, that address serves the site's logo in the page's colors.
 
 - SVGs that paint with `currentColor` are recolored when served: the theme's `ink` by default, `bg` with `?on=ink` (the admin sidebar), or any `?color=<hex>`. One monochrome SVG therefore works on light, dark and inverted surfaces.
 - Uploads with scripts, event handlers, external references or `foreignObject` are rejected. Logos are also only ever served as images, with a `default-src 'none'` CSP.

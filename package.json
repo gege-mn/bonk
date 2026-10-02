@@ -24,16 +24,16 @@
 				"description": "D1 database that stores monitors, check history, incidents and settings."
 			},
 			"ADMIN_PASSWORD": {
-				"description": "Password for `/admin`. Used only when Cloudflare Access is **not** configured. Pick something long."
+				"description": "Password for `/admin` and private status pages. Used only when Cloudflare Access is **not** configured. Pick something long."
 			},
 			"ENCRYPTION_KEY": {
 				"description": "Encrypts notification credentials (bot tokens, webhook URLs) at rest. Any long random string, e.g. the output of `openssl rand -base64 32`. Don't change it later or saved channels stop working."
 			},
 			"CF_TEAM_DOMAIN": {
-				"description": "Optional. Your Cloudflare Access team domain, e.g. `https://yourteam.cloudflareaccess.com`. Set it together with `CF_AUD_TOKEN` to sign in to `/admin` with Access instead of a password."
+				"description": "Optional. Your Cloudflare Access team domain, e.g. `https://yourteam.cloudflareaccess.com`. Set it together with `CF_AUD_TOKEN` to sign in to `/admin` and private status pages with Access instead of a password."
 			},
 			"CF_AUD_TOKEN": {
-				"description": "Optional. The **Application Audience (AUD) tag** of the Access application protecting `/admin`."
+				"description": "Optional. The **Application Audience (AUD) tag** of the Access application protecting `/admin` and any private status pages."
 			}
 		}
 	},

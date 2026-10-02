@@ -3,6 +3,7 @@
 
 	let { data, form } = $props();
 	const minSeconds = $derived(data.appearance.rules.minIncidentMin * 60);
+	let monitorId = $state('');
 </script>
 
 <div class="layout">
@@ -23,7 +24,9 @@
 							{#if i.monitor_name}· {i.monitor_name}{/if}
 							{#if i.auto}· automatic{/if}
 							{#if !i.public}
-								· hidden from status page
+								· hidden from status pages
+							{:else if !i.page_count}
+								· on no status page
 							{:else if i.auto && i.resolved_at && i.resolved_at - i.started_at < minSeconds}
 								· too short for the status page
 							{/if}
@@ -51,13 +54,26 @@
 			</label>
 			<label class="field">
 				Affects
-				<select class="select" name="monitor_id">
+				<select class="select" name="monitor_id" bind:value={monitorId}>
 					<option value="">No specific monitor</option>
 					{#each data.monitors as m (m.id)}<option value={m.id}>{m.name}</option>{/each}
 				</select>
 			</label>
 			<label class="field">First update<textarea class="textarea" name="body" required placeholder="What's happening and what you're doing about it."></textarea></label>
-			<label class="check"><input type="checkbox" name="public" checked />Show on the status page</label>
+			{#if monitorId}
+				<p class="t-xs t-muted">It appears on every status page that lists this monitor.</p>
+			{:else}
+				<fieldset class="pages">
+					<legend>Post on</legend>
+					{#each data.pages as p (p.id)}
+						<label class="check check-box">
+							<input type="checkbox" name="pages" value={p.id} checked={!!p.is_default} />
+							{p.name}<span class="t-muted t-small">· {p.public ? 'public' : 'private'}</span>
+						</label>
+					{/each}
+				</fieldset>
+			{/if}
+			<label class="check"><input type="checkbox" name="public" checked />Show on status pages</label>
 			<button class="btn btn-primary">Post incident</button>
 		</div>
 	</form>
@@ -103,6 +119,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 16px;
+	}
+	.pages {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.pages legend {
+		padding: 0;
+		margin-bottom: 6px;
+		font-size: 13px;
+		font-weight: 700;
 	}
 	.new h2 {
 		font-size: 18px;

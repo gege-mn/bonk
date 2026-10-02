@@ -2,7 +2,8 @@ import { fail, redirect } from '@sveltejs/kit';
 import { authMode, clearAttempts, makeSession, passwordMatches, registerAttempt, SESSION_COOKIE } from '$lib/server/auth';
 import type { Actions, PageServerLoad } from './$types';
 
-const safeNext = (n: string | null) => (n && /^\/(admin|private)(\/|\?|$)/.test(n) ? n : '/admin');
+// Private status pages send people here too, so any path on this site is fine; another site is not.
+const safeNext = (n: string | null) => (n && /^\/(?!\/)[^\\\x00-\x20]*$/.test(n) ? n : '/admin');
 
 export const load: PageServerLoad = async ({ platform, locals, url }) => {
 	if (authMode(platform!.env) !== 'password' || locals.admin) redirect(303, safeNext(url.searchParams.get('next')));

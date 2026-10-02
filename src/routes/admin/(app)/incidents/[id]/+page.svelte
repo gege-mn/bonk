@@ -4,6 +4,7 @@
 
 	let { data, form } = $props();
 	const i = $derived(data.incident);
+	const shownOn = $derived(data.pages.filter((p) => data.pageIds.includes(p.id)));
 	let sure = $state(false);
 </script>
 
@@ -11,7 +12,7 @@
 <div class="head">
 	<span class="tag s-{i.resolved_at ? 'up' : i.severity === 'info' ? 'maintenance' : i.severity}">{i.resolved_at ? 'Resolved' : i.status}</span>
 	<h1 class="t-display t-display-l">{i.title}</h1>
-	<span class="t-small t-muted">Started {fmtDate(i.started_at)} {fmtTime(i.started_at)}{i.public ? '' : ' · hidden from the status page'}</span>
+	<span class="t-small t-muted">Started {fmtDate(i.started_at)} {fmtTime(i.started_at)}{i.public ? '' : ' · hidden from status pages'}</span>
 </div>
 {#if form?.error}<div class="notice notice-bad t-small">{form.error}</div>{/if}
 
@@ -43,7 +44,26 @@
 		<form method="POST" action="?/edit" class="panel" use:enhance={() => async ({ update }) => update({ reset: false })}>
 			<div class="panel-body stack">
 				<label class="field">Title<input class="input" name="title" value={i.title} maxlength="140" /></label>
-				<label class="check"><input type="checkbox" name="public" checked={!!i.public} />Show on the status page</label>
+				{#if i.monitor_id}
+					<p class="t-small t-muted">
+						{#if shownOn.length}
+							Appears on the pages that list its monitor: {shownOn.map((p) => p.name).join(', ')}.
+						{:else}
+							Its monitor is on no status page, so this incident isn't shown anywhere.
+						{/if}
+					</p>
+				{:else}
+					<fieldset class="pages">
+						<legend>Posted on</legend>
+						{#each data.pages as p (p.id)}
+							<label class="check check-box">
+								<input type="checkbox" name="pages" value={p.id} checked={data.pageIds.includes(p.id)} />
+								{p.name}<span class="t-muted t-small">· {p.public ? 'public' : 'private'}</span>
+							</label>
+						{/each}
+					</fieldset>
+				{/if}
+				<label class="check"><input type="checkbox" name="public" checked={!!i.public} />Show on status pages</label>
 				<button class="btn">Save</button>
 			</div>
 		</form>
@@ -96,6 +116,17 @@
 		display: flex;
 		flex-direction: column;
 		gap: 14px;
+	}
+	.pages {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+	.pages legend {
+		padding: 0;
+		margin-bottom: 6px;
+		font-size: 13px;
+		font-weight: 700;
 	}
 	.panel h2 {
 		font-size: 16px;

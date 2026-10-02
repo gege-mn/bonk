@@ -3,7 +3,8 @@ import { parseHostPort, readPath } from './checks';
 import { open, seal } from './crypto';
 import { recountUnconfirmed, emptyState } from './engine';
 import { isBlip } from './repo';
-import { checkSvg, normalizeRules, normalizeSite } from './settings';
+import { normalizeLinks, parsePageMonitors, slugProblem } from './pages';
+import { checkSvg, normalizeRules } from './settings';
 import {
 	appendRecent,
 	applyResult,
@@ -233,8 +234,30 @@ describe('settings', () => {
 		expect(checkSvg('<svg viewBox="0 0 10 10"><use href="#a"/><path d="M0 0"/></svg>')).toBeNull();
 	});
 	it('drops unsafe links', () => {
-		const s = normalizeSite({ name: 'X', links: [{ label: 'a', href: 'javascript:alert(1)' }, { label: 'b', href: 'https://ok' }] });
-		expect(s.links).toEqual([{ label: 'b', href: 'https://ok' }]);
+		const links = normalizeLinks([{ label: 'a', href: 'javascript:alert(1)' }, { label: 'b', href: 'https://ok' }]);
+		expect(links).toEqual([{ label: 'b', href: 'https://ok' }]);
+	});
+});
+
+describe('status pages', () => {
+	it('keeps slugs off Bonk\'s own paths', () => {
+		expect(slugProblem('internal-tools')).toBeNull();
+		for (const bad of ['admin', 'api', 'incidents', 'logo', 'Team', 'a/b', '_app', 'robots.txt', '-x', '']) {
+			expect(slugProblem(bad), bad).not.toBeNull();
+		}
+	});
+	it('reads the monitor picker, dropping unknown and repeated monitors', () => {
+		const raw = JSON.stringify([
+			{ monitor_id: 2, group_name: ' API ', display_name: '' },
+			{ monitor_id: 9, group_name: 'x' },
+			{ monitor_id: 1, group_name: 'API', display_name: 'Web' },
+			{ monitor_id: 2 }
+		]);
+		expect(parsePageMonitors(raw, new Set([1, 2]))).toEqual([
+			{ monitor_id: 2, group_name: 'API', display_name: null },
+			{ monitor_id: 1, group_name: 'API', display_name: 'Web' }
+		]);
+		expect(parsePageMonitors('{', new Set())).toBeNull();
 	});
 });
 

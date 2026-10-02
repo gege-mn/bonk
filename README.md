@@ -2,16 +2,17 @@
 
 **Your site is down, bonk!**
 
-Uptime monitoring and a public status page that run entirely on Cloudflare: one Worker, a one-minute Cron Trigger, and a D1 database. There's no server to babysit, and it fits the free plan.
+Uptime monitoring and status pages that run entirely on Cloudflare: one Worker, a one-minute Cron Trigger, and a D1 database. There's no server to babysit, and it fits the free plan.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/gege-mn/bonk)
 
 - **Checks:** HTTP(s) with status and slow-response thresholds, keyword, JSON value, TCP port, DNS record, and push/heartbeat (a cron job pings Bonk; silence alerts).
 - **Admin panel:** add and edit monitors in a form, test a check before saving, pause, see response-time charts and event logs. No config files, no redeploys.
 - **Alerts** through 35 services: Telegram, Discord, Slack, Microsoft Teams, Google Chat, Mattermost, Rocket.Chat, Matrix, Zulip, Webex, ntfy, Gotify, Pushover, Pushbullet, Bark, LINE, Signal, Feishu/Lark, DingTalk, WeCom, PagerDuty, Opsgenie, Splunk On-Call, Home Assistant, Apprise, generic webhooks, email (Resend, Postmark, SendGrid, Mailgun, Brevo, SMTP2GO), Twilio SMS, PushDeer and ServerChan.
-- **Status page** with 90-day history, incidents (opened and closed automatically, with manual updates) and scheduled maintenance.
-- **Private monitors:** untick *Show on the public status page* and a monitor (with its automatic incidents) disappears from the public page and `/api/status.json`, but keeps checking and alerting. Signed-in admins see everything on one status page at `/private`.
-- **Your brand:** logo, colors, fonts and corner style are editable from the admin, with a live preview and contrast checks. See [docs/design-system.md](docs/design-system.md).
+- **Status pages** with 90-day history, incidents (opened and closed automatically, with manual updates) and scheduled maintenance. Make as many as you need under **Admin → Status pages**: each has its own address (`/<slug>`; the default page is at `/`), name, description, header links and choice of monitors, with groups, order and display names set per page. A monitor can be on several pages or none, and it checks and alerts either way.
+- **Private pages:** untick *Public* on a page and it, its incidents and its JSON ask for the admin sign-in.
+- **JSON** for each page at `/<slug>/api/status.json` (`/api/status.json` for the default page).
+- **Your brand:** logo, colors, fonts and corner style are editable from the admin, with a live preview and contrast checks. A status page can have its own theme and logo. See [docs/design-system.md](docs/design-system.md).
 - **Sign-in** with Cloudflare Access, or a password stored as a Worker secret.
 
 ## Deploy
@@ -61,15 +62,17 @@ Then open **Admin → Settings** and set **Public URL** to that address, so aler
 ## Signing in with Cloudflare Access (recommended)
 
 1. In Zero Trust, go to **Access → Applications → Add an application → Self-hosted**.
-2. Set the domain to your status host with path `admin`, e.g. `status.example.com/admin`. Add `status.example.com/private` to the same application if you use private monitors. Add a policy for the people allowed in.
+2. Set the domain to your status host with path `admin`, e.g. `status.example.com/admin`. Add a policy for the people allowed in.
+   - For each private status page, add its path to the same application, e.g. `status.example.com/internal`. A private page that isn't covered answers 403.
+   - If the default page (at `/`) is private, protect the whole host instead. That also puts every other page behind Access, so add a **Bypass** policy for `status.example.com/api/push` (heartbeat monitors) and for each page that should stay public, plus `status.example.com/brand`. It's simpler to keep the default page public and put private things on their own page.
 3. Copy the application's **Application Audience (AUD) Tag**.
 4. On the Worker, set:
    - `CF_TEAM_DOMAIN`: `https://<your-team>.cloudflareaccess.com`
    - `CF_AUD_TOKEN`: the AUD tag
 
-When both are set, Bonk verifies the Access JWT on every `/admin` and `/private` request (signature, issuer and audience) and ignores `ADMIN_PASSWORD`. A request that didn't come through Access, e.g. via the `workers.dev` URL, gets a 403.
+When both are set, Bonk verifies the Access JWT on every request to `/admin` or a private status page (signature, issuer and audience) and ignores `ADMIN_PASSWORD`. A request that didn't come through Access, e.g. via the `workers.dev` URL, gets a 403.
 
-Without Access, `/admin` uses `ADMIN_PASSWORD`. Sessions are signed with the password itself, so changing it signs everyone out. Failed sign-ins are rate-limited per IP.
+Without Access, `/admin` and private pages use `ADMIN_PASSWORD`. Sessions are signed with the password itself, so changing it signs everyone out. Failed sign-ins are rate-limited per IP.
 
 ## Configuration reference
 
@@ -89,11 +92,12 @@ Cron (every minute) ─► worker/index.ts ─► tick()        src/lib/server/e
                                           ├─ applyResult status.ts: N failures in a row → down; 1 success → up
                                           ├─ incidents   opened/closed automatically
                                           └─ deliver()   notify/*: send now, queue + retry on failure
-Requests ─────────► SvelteKit (status page + /admin)
+Requests ─────────► SvelteKit (status pages + /admin)
 ```
 
 - **Alerting.** A monitor only turns *down* or *degraded* after **Alert after** failed checks in a row (default 3), so one blip doesn't wake anyone. It recovers on the first good check. Every change of state sends one alert per attached channel, optionally repeated every N minutes while still failing. Failed sends are retried with backoff (1, 2, 4, 8, 16 minutes) and every attempt lands in the monitor's event log. Maintenance windows keep checking but mute alerts and incidents.
-- **Short blips.** Uptime totals only count a failed or slow check once the monitor is confirmed down or degraded, so a hiccup shorter than **Alert after** never touches the history. On top of that, **Admin → Settings → Short blips** (default 5 minutes) keeps brief trouble off the public page: automatic incidents that recover sooner are left out of the incident list, and a day's bar only changes color once its failed and slow checks add up to that long. They still alert you, still count toward the uptime percentage, and stay visible in the admin. Set it to 0 to show everything. Totals recorded before this behavior was added keep their old counts.
+- **What a page shows.** Only the monitors picked for it. An incident follows its monitor onto every page that lists it (and stays on those pages if the monitor is later deleted); one posted without a monitor shows on the pages you tick when posting it. Unticking **Show on status pages** hides an incident everywhere. A maintenance window shows on pages that have an affected monitor, and one for all monitors shows on every page. An incident's link (`/<slug>/incidents/<id>`) only works through a page that shows it, so a private page's incidents can't be read from a public one. Upgrading from the single status page: the migration turns it into the default page with every monitor that was public; monitors that were private start on no page, so add them to a private page if you want them shown. `/private` is gone; if your Access application lists that path, replace it with the private page's.
+- **Short blips.** Uptime totals only count a failed or slow check once the monitor is confirmed down or degraded, so a hiccup shorter than **Alert after** never touches the history. On top of that, **Admin → Settings → Short blips** (default 5 minutes) keeps brief trouble off status pages: automatic incidents that recover sooner are left out of the incident list, and a day's bar only changes color once its failed and slow checks add up to that long. They still alert you, still count toward the uptime percentage, and stay visible in the admin. Set it to 0 to show everything. Totals recorded before this behavior was added keep their old counts.
 - **Storage budget.** Each check rewrites one row per monitor (the state row carries the last 90 checks and the current hour's totals). Hours are rolled into `hourly` and `daily` tables when they close. At one-minute checks that's about 1,440 row writes per monitor per day, so roughly 60 monitors fit D1's free 100k-writes/day allowance. History is kept for 35 days (hourly) and 400 days (daily).
 - **Workers limits.** On the free plan a single invocation can make 50 outbound requests, which covers roughly 40 one-minute HTTP monitors plus their alerts. Use longer intervals or the paid plan beyond that.
 

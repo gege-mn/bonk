@@ -9,7 +9,7 @@
 	const rows = $derived(
 		data.monitors.filter((m) => {
 			const s = q.trim().toLowerCase();
-			return !s || m.name.toLowerCase().includes(s) || m.target.toLowerCase().includes(s) || m.group_name.toLowerCase().includes(s);
+			return !s || m.name.toLowerCase().includes(s) || m.target.toLowerCase().includes(s) || m.pages.some((p) => p.toLowerCase().includes(s));
 		})
 	);
 	const count = (st: string) => data.monitors.filter((m) => !m.paused && m.state.status === st).length;
@@ -69,7 +69,7 @@
 				<span class="name-cell" role="cell">
 					<span class="swatch s-{statusOf(m)}"></span>
 					<span class="name-text">
-						<span class="t-heading name">{m.name}{#if !m.public}<span class="t-xs t-muted private"> · private</span>{/if}</span>
+						<span class="t-heading name">{m.name}{#if !m.pages.length}<span class="t-xs t-muted private"> · not on a status page</span>{/if}</span>
 						<span class="t-xs t-muted target">{m.type === 'push' ? `Push · expects a ping every ${Math.round(m.interval_s / 60)} min` : m.target}</span>
 					</span>
 				</span>

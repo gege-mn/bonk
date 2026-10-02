@@ -3,7 +3,6 @@
 
 	let { data, form } = $props();
 	const site = $derived(data.appearance.site);
-	const links = $derived([...site.links, { label: '', href: '' }, { label: '', href: '' }].slice(0, 5));
 </script>
 
 <div class="layout">
@@ -11,9 +10,8 @@
 		{#if form?.saved}<div class="notice t-small">Saved.</div>{/if}
 		{#if form?.error}<div class="notice notice-bad t-small">{form.error}</div>{/if}
 		<fieldset class="stack">
-			<legend class="legend">Status page</legend>
-			<label class="field">Name<input class="input" name="name" value={site.name} maxlength="60" required /><span class="help">Shown next to the logo, in the tab title and in alerts.</span></label>
-			<label class="field">Description<input class="input" name="description" value={site.description} maxlength="300" /><span class="help">Shown under the headline when everything is fine.</span></label>
+			<legend class="legend">This Bonk</legend>
+			<label class="field">Name<input class="input" name="name" value={site.name} maxlength="60" required /><span class="help">Shown in the admin and in alerts. Each status page has its own name, description and links under <a href="/admin/pages">Status pages</a>.</span></label>
 			<label class="field">
 				Public URL
 				<input class="input" name="url" value={site.url} placeholder={data.origin} />
@@ -30,15 +28,6 @@
 					checks add up to this long. They still alert you and stay in the admin. 0 shows everything.
 				</span>
 			</label>
-		</fieldset>
-		<fieldset class="stack">
-			<legend class="legend">Header links</legend>
-			{#each links as l, i (i)}
-				<div class="link">
-					<input class="input" name="link_label" value={l.label} placeholder="Label" aria-label="Link {i + 1} label" />
-					<input class="input" name="link_href" value={l.href} placeholder="https://" aria-label="Link {i + 1} URL" />
-				</div>
-			{/each}
 		</fieldset>
 		<div><button class="btn btn-primary">Save</button></div>
 	</form>
@@ -66,7 +55,7 @@
 		</div>
 		<div class="panel">
 			<div class="panel-head"><h2 class="t-heading">Status JSON</h2></div>
-			<div class="panel-body t-small"><p>Machine-readable status for widgets: <a href="/api/status.json">{data.origin}/api/status.json</a></p></div>
+			<div class="panel-body t-small"><p>Machine-readable status for widgets: <a href="/api/status.json">{data.origin}/api/status.json</a>. Other pages have their own at <code>/&lt;slug&gt;/api/status.json</code>; a private page's needs the sign-in.</p></div>
 		</div>
 	</aside>
 </div>
@@ -87,11 +76,6 @@
 		display: flex;
 		flex-direction: column;
 		gap: 8px;
-	}
-	.link {
-		display: grid;
-		grid-template-columns: 160px minmax(0, 1fr);
-		gap: 10px;
 	}
 	.narrow {
 		max-width: 120px;

@@ -25,7 +25,7 @@ function int(fd: FormData, k: string, min: number, max: number, fallback: number
 	return Math.min(max, Math.max(min, Math.round(n)));
 }
 
-export function parseMonitorForm(fd: FormData): { values: MonitorInput; errors: Record<string, string>; channelIds: number[] } {
+export function parseMonitorForm(fd: FormData): { values: MonitorInput; errors: Record<string, string>; channelIds: number[]; pageIds: number[] } {
 	const errors: Record<string, string> = {};
 	const type = (MONITOR_TYPES.find((t) => t.id === fd.get('type'))?.id ?? 'http') as MonitorType;
 	const target = str(fd, 'target', 500);
@@ -52,10 +52,7 @@ export function parseMonitorForm(fd: FormData): { values: MonitorInput; errors: 
 		alert_after: int(fd, 'alert_after', 1, 20, 3),
 		resend_min: int(fd, 'resend_min', 0, 10080, 0),
 		paused: bool(fd, 'paused'),
-		public: bool(fd, 'public'),
-		public_name: str(fd, 'public_name', 80) || null,
-		group_name: str(fd, 'group_name', 60),
-		sort: int(fd, 'sort', 0, 100000, 0)
+		public_name: str(fd, 'public_name', 80) || null
 	};
 
 	if (!values.name) errors.name = 'Give it a name.';
@@ -92,7 +89,11 @@ export function parseMonitorForm(fd: FormData): { values: MonitorInput; errors: 
 		.getAll('channels')
 		.map(Number)
 		.filter((n) => Number.isInteger(n) && n > 0);
-	return { values, errors, channelIds };
+	const pageIds = fd
+		.getAll('pages')
+		.map(Number)
+		.filter((n) => Number.isInteger(n) && n > 0);
+	return { values, errors, channelIds, pageIds };
 }
 
 export const newPushToken = () => randomToken(18);
@@ -119,8 +120,5 @@ export const MONITOR_COLUMNS = [
 	'alert_after',
 	'resend_min',
 	'paused',
-	'public',
-	'public_name',
-	'group_name',
-	'sort'
+	'public_name'
 ] as const satisfies readonly (keyof MonitorInput)[];

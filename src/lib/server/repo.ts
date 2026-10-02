@@ -1,4 +1,4 @@
-import { emptyState } from './engine';
+import { autoTitle, emptyState } from './engine';
 import { getSetting, normalizeRules, type Rules } from './settings';
 import { barStatus, dayStart, decodeRecent, formatPct, hourStart, minBadChecks, uptimePct } from './status';
 import type { Incident, IncidentUpdate, Maintenance, Monitor, MonitorState, Status } from './types';
@@ -78,8 +78,8 @@ function totals(days: Map<number, DayRow> | undefined, since: number) {
 	return { n, down, uptime: uptimePct(n, down), avgLatency: latN ? Math.round(latSum / latN) : null };
 }
 
-async function statesFor(db: D1Database, where = ''): Promise<Map<number, MonitorState>> {
-	const { results } = await db.prepare(`SELECT s.* FROM monitor_state s ${where}`).all<MonitorState>();
+async function statesFor(db: D1Database, where = '', ...binds: unknown[]): Promise<Map<number, MonitorState>> {
+	const { results } = await db.prepare(`SELECT s.* FROM monitor_state s ${where}`).bind(...binds).all<MonitorState>();
 	return new Map(results.map((s) => [s.monitor_id, s]));
 }
 
@@ -88,32 +88,61 @@ export interface PublicMonitor {
 	name: string;
 	group: string;
 	status: Status | 'paused' | 'maintenance';
-	/** Hidden from the public page; only ever set when private monitors were asked for. */
-	private: boolean;
 	uptime: string;
 	bars: Bar[];
 }
 
 /**
- * Everything the status page shows. Private monitors and incidents are left out unless
- * `includePrivate` is set, which only the signed-in page does.
+ * Whether incident `i` belongs on page ?1: it follows its monitor onto every page that lists it,
+ * and shows wherever it was pinned (notices, history of a deleted monitor). `public = 0` hides it everywhere.
  */
-export async function publicStatus(db: D1Database, now = Math.floor(Date.now() / 1000), includePrivate = false) {
-	const mon = includePrivate ? '1 = 1' : 'm.public = 1';
-	const inc = includePrivate ? '1 = 1' : 'public = 1';
+export const INCIDENT_ON_PAGE = `i.public = 1 AND (
+	i.monitor_id IN (SELECT monitor_id FROM page_monitors WHERE page_id = ?1)
+	OR i.id IN (SELECT incident_id FROM incident_pages WHERE page_id = ?1))`;
+
+/** `page_name` is what page ?1 calls the incident's monitor, when it lists it. */
+const PAGE_INCIDENT = `SELECT i.*, (SELECT coalesce(pm.display_name, m.public_name, m.name) FROM page_monitors pm
+	JOIN monitors m ON m.id = pm.monitor_id WHERE pm.page_id = ?1 AND pm.monitor_id = i.monitor_id) AS page_name FROM incidents i`;
+
+/** Automatic titles are written with the monitor's general name; a page that renames it should read consistently. */
+function retitle({ page_name, ...i }: Incident & { page_name: string | null }): Incident {
+	return i.auto && page_name ? { ...i, title: autoTitle(page_name, i.severity) } : i;
+}
+
+/** One incident as page `pageId` shows it, or null when it isn't on that page. */
+export async function pageIncident(db: D1Database, pageId: number, id: number): Promise<Incident | null> {
+	const row = await db
+		.prepare(`${PAGE_INCIDENT} WHERE i.id = ?2 AND ${INCIDENT_ON_PAGE}`)
+		.bind(pageId, id)
+		.first<Incident & { page_name: string | null }>();
+	return row && retitle(row);
+}
+
+/** Everything one status page shows: only its own monitors, and the incidents and maintenance that touch them. */
+export async function pageStatus(db: D1Database, pageId: number, now = Math.floor(Date.now() / 1000)) {
+	const onPage = 'JOIN page_monitors pm ON pm.monitor_id = m.id AND pm.page_id = ?1';
 	const since = dayStart(now) - 89 * 86400;
 	const [mons, states, days, open, past, maint, rawRules] = await Promise.all([
-		db.prepare(`SELECT m.* FROM monitors m WHERE ${mon} ORDER BY m.sort, m.id`).all<Monitor>(),
-		statesFor(db, `JOIN monitors m ON m.id = s.monitor_id WHERE ${mon}`),
 		db
-			.prepare(`SELECT d.* FROM daily d JOIN monitors m ON m.id = d.monitor_id WHERE ${mon} AND d.day >= ?`)
-			.bind(since)
+			.prepare(`SELECT m.*, pm.group_name AS page_group, pm.display_name FROM monitors m ${onPage} ORDER BY pm.sort, m.id`)
+			.bind(pageId)
+			.all<Monitor & { page_group: string; display_name: string | null }>(),
+		statesFor(db, `JOIN monitors m ON m.id = s.monitor_id ${onPage}`, pageId),
+		db
+			.prepare(`SELECT d.* FROM daily d JOIN monitors m ON m.id = d.monitor_id ${onPage} WHERE d.day >= ?2`)
+			.bind(pageId, since)
 			.all<DayRow>(),
-		db.prepare(`SELECT * FROM incidents WHERE ${inc} AND resolved_at IS NULL ORDER BY started_at DESC`).all<Incident>(),
 		db
-			.prepare(`SELECT * FROM incidents WHERE ${inc} AND resolved_at IS NOT NULL AND started_at > ? ORDER BY started_at DESC LIMIT 200`)
-			.bind(now - 30 * 86400)
-			.all<Incident>(),
+			.prepare(`${PAGE_INCIDENT} WHERE ${INCIDENT_ON_PAGE} AND i.resolved_at IS NULL ORDER BY i.started_at DESC`)
+			.bind(pageId)
+			.all<Incident & { page_name: string | null }>(),
+		db
+			.prepare(
+				`${PAGE_INCIDENT} WHERE ${INCIDENT_ON_PAGE} AND i.resolved_at IS NOT NULL AND i.started_at > ?2
+				ORDER BY i.started_at DESC LIMIT 200`
+			)
+			.bind(pageId, now - 30 * 86400)
+			.all<Incident & { page_name: string | null }>(),
 		db
 			.prepare('SELECT * FROM maintenance WHERE ends_at > ? AND starts_at < ? ORDER BY starts_at')
 			.bind(now, now + 7 * 86400)
@@ -122,7 +151,7 @@ export async function publicStatus(db: D1Database, now = Math.floor(Date.now() /
 	]);
 	const rules = normalizeRules(rawRules);
 	const byDay = dailyWithLive(days.results, states, now);
-	// A window scoped to monitors that aren't on this page (private or deleted) would only leak their existence.
+	// A window scoped to monitors that aren't on this page (or are deleted) would only leak their existence.
 	const shown = new Set(mons.results.map((m) => m.id));
 	const windows = maint.results.filter((x) => {
 		const ids = JSON.parse(x.monitor_ids || '[]') as number[];
@@ -138,10 +167,9 @@ export async function publicStatus(db: D1Database, now = Math.floor(Date.now() /
 		});
 		return {
 			id: m.id,
-			name: m.public_name || m.name,
-			group: m.group_name,
+			name: m.display_name || m.public_name || m.name,
+			group: m.page_group,
 			status: m.paused ? 'paused' : inMaint ? 'maintenance' : (s?.status ?? 'pending'),
-			private: !m.public,
 			uptime: formatPct(totals(byDay.get(m.id), since).uptime),
 			bars: bars(byDay.get(m.id), 90, now, minBadFor(m, rules))
 		};
@@ -158,8 +186,8 @@ export async function publicStatus(db: D1Database, now = Math.floor(Date.now() /
 	return {
 		monitors,
 		groups,
-		openIncidents: open.results.map((i) => ({ ...i, updates: updates.get(i.id) ?? [] })),
-		pastIncidents: past.results.filter((i) => !isBlip(i, rules)).slice(0, 10),
+		openIncidents: open.results.map((i) => ({ ...retitle(i), updates: updates.get(i.id) ?? [] })),
+		pastIncidents: past.results.filter((i) => !isBlip(i, rules)).slice(0, 10).map(retitle),
 		maintenance: windows.map((m) => ({ ...m, active: m.starts_at <= now })),
 		checkedAt: Math.max(0, ...[...states.values()].map((s) => s.last_check_at ?? 0)) || null
 	};
@@ -181,16 +209,21 @@ export async function updatesFor(db: D1Database, ids: number[]): Promise<Map<num
 
 export async function adminMonitors(db: D1Database, now = Math.floor(Date.now() / 1000)) {
 	const since = dayStart(now) - 29 * 86400;
-	const [mons, states, days] = await Promise.all([
-		db.prepare('SELECT * FROM monitors ORDER BY sort, id').all<Monitor>(),
+	const [mons, states, days, placed] = await Promise.all([
+		db.prepare('SELECT * FROM monitors ORDER BY name COLLATE NOCASE, id').all<Monitor>(),
 		statesFor(db),
-		db.prepare('SELECT * FROM daily WHERE day >= ?').bind(since).all<DayRow>()
+		db.prepare('SELECT * FROM daily WHERE day >= ?').bind(since).all<DayRow>(),
+		db
+			.prepare('SELECT pm.monitor_id, p.name FROM page_monitors pm JOIN pages p ON p.id = pm.page_id ORDER BY p.is_default DESC, p.name COLLATE NOCASE')
+			.all<{ monitor_id: number; name: string }>()
 	]);
 	const byDay = dailyWithLive(days.results, states, now);
 	return mons.results.map((m) => {
 		const s = states.get(m.id) ?? emptyState(m.id);
 		return {
 			...m,
+			/** Names of the status pages that list it. */
+			pages: placed.results.filter((p) => p.monitor_id === m.id).map((p) => p.name),
 			state: s,
 			recent: decodeRecent(s.recent).slice(-40),
 			uptime30: formatPct(totals(byDay.get(m.id), since).uptime)

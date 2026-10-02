@@ -1,13 +1,15 @@
 import { json } from '@sveltejs/kit';
 import { headline } from '$lib/headline';
-import { publicStatus } from '$lib/server/repo';
+import { pageStatus } from '$lib/server/repo';
 import type { RequestHandler } from './$types';
 
-export const GET: RequestHandler = async ({ platform }) => {
-	const s = await publicStatus(platform!.env.DB);
+export const GET: RequestHandler = async ({ platform, locals }) => {
+	const pg = locals.page!;
+	const s = await pageStatus(platform!.env.DB, pg.id);
 	const h = headline(s.monitors, s.openIncidents, s.maintenance.some((m) => m.active));
 	return json(
 		{
+			page: pg.name,
 			status: h.status,
 			summary: h.title,
 			checkedAt: s.checkedAt,
@@ -21,6 +23,7 @@ export const GET: RequestHandler = async ({ platform }) => {
 			})),
 			incidents: s.openIncidents.map((i) => ({ id: i.id, title: i.title, severity: i.severity, status: i.status, startedAt: i.started_at }))
 		},
-		{ headers: { 'cache-control': 'public, max-age=30', 'access-control-allow-origin': '*' } }
+		// A private page's JSON is for signed-in browsers only, so it gets neither a shared cache nor CORS.
+		pg.public ? { headers: { 'cache-control': 'public, max-age=30', 'access-control-allow-origin': '*' } } : {}
 	);
 };

@@ -9,7 +9,7 @@
 <main class="wrap">
 	<form method="POST" class="panel card">
 		<div class="brand">
-			<Logo size={28} version={data.appearance.logoVersion} />
+			<Logo size={28} src={data.appearance.logo} />
 			<span class="t-heading">{data.appearance.site.name}</span>
 			<span class="t-small t-muted">/ uptime</span>
 		</div>
