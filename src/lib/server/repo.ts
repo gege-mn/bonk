@@ -88,22 +88,30 @@ export interface PublicMonitor {
 	name: string;
 	group: string;
 	status: Status | 'paused' | 'maintenance';
+	/** Hidden from the public page; only ever set when private monitors were asked for. */
+	private: boolean;
 	uptime: string;
 	bars: Bar[];
 }
 
-export async function publicStatus(db: D1Database, now = Math.floor(Date.now() / 1000)) {
+/**
+ * Everything the status page shows. Private monitors and incidents are left out unless
+ * `includePrivate` is set, which only the signed-in page does.
+ */
+export async function publicStatus(db: D1Database, now = Math.floor(Date.now() / 1000), includePrivate = false) {
+	const mon = includePrivate ? '1 = 1' : 'm.public = 1';
+	const inc = includePrivate ? '1 = 1' : 'public = 1';
 	const since = dayStart(now) - 89 * 86400;
 	const [mons, states, days, open, past, maint, rawRules] = await Promise.all([
-		db.prepare('SELECT * FROM monitors WHERE public = 1 ORDER BY sort, id').all<Monitor>(),
-		statesFor(db, 'JOIN monitors m ON m.id = s.monitor_id WHERE m.public = 1'),
+		db.prepare(`SELECT m.* FROM monitors m WHERE ${mon} ORDER BY m.sort, m.id`).all<Monitor>(),
+		statesFor(db, `JOIN monitors m ON m.id = s.monitor_id WHERE ${mon}`),
 		db
-			.prepare('SELECT d.* FROM daily d JOIN monitors m ON m.id = d.monitor_id WHERE m.public = 1 AND d.day >= ?')
+			.prepare(`SELECT d.* FROM daily d JOIN monitors m ON m.id = d.monitor_id WHERE ${mon} AND d.day >= ?`)
 			.bind(since)
 			.all<DayRow>(),
-		db.prepare('SELECT * FROM incidents WHERE public = 1 AND resolved_at IS NULL ORDER BY started_at DESC').all<Incident>(),
+		db.prepare(`SELECT * FROM incidents WHERE ${inc} AND resolved_at IS NULL ORDER BY started_at DESC`).all<Incident>(),
 		db
-			.prepare('SELECT * FROM incidents WHERE public = 1 AND resolved_at IS NOT NULL AND started_at > ? ORDER BY started_at DESC LIMIT 200')
+			.prepare(`SELECT * FROM incidents WHERE ${inc} AND resolved_at IS NOT NULL AND started_at > ? ORDER BY started_at DESC LIMIT 200`)
 			.bind(now - 30 * 86400)
 			.all<Incident>(),
 		db
@@ -114,7 +122,13 @@ export async function publicStatus(db: D1Database, now = Math.floor(Date.now() /
 	]);
 	const rules = normalizeRules(rawRules);
 	const byDay = dailyWithLive(days.results, states, now);
-	const activeMaint = maint.results.filter((m) => m.starts_at <= now);
+	// A window scoped to monitors that aren't on this page (private or deleted) would only leak their existence.
+	const shown = new Set(mons.results.map((m) => m.id));
+	const windows = maint.results.filter((x) => {
+		const ids = JSON.parse(x.monitor_ids || '[]') as number[];
+		return ids.length === 0 || ids.some((id) => shown.has(id));
+	});
+	const activeMaint = windows.filter((m) => m.starts_at <= now);
 
 	const monitors: PublicMonitor[] = mons.results.map((m) => {
 		const s = states.get(m.id);
@@ -127,6 +141,7 @@ export async function publicStatus(db: D1Database, now = Math.floor(Date.now() /
 			name: m.public_name || m.name,
 			group: m.group_name,
 			status: m.paused ? 'paused' : inMaint ? 'maintenance' : (s?.status ?? 'pending'),
+			private: !m.public,
 			uptime: formatPct(totals(byDay.get(m.id), since).uptime),
 			bars: bars(byDay.get(m.id), 90, now, minBadFor(m, rules))
 		};
@@ -145,7 +160,7 @@ export async function publicStatus(db: D1Database, now = Math.floor(Date.now() /
 		groups,
 		openIncidents: open.results.map((i) => ({ ...i, updates: updates.get(i.id) ?? [] })),
 		pastIncidents: past.results.filter((i) => !isBlip(i, rules)).slice(0, 10),
-		maintenance: maint.results.map((m) => ({ ...m, active: m.starts_at <= now })),
+		maintenance: windows.map((m) => ({ ...m, active: m.starts_at <= now })),
 		checkedAt: Math.max(0, ...[...states.values()].map((s) => s.last_check_at ?? 0)) || null
 	};
 }

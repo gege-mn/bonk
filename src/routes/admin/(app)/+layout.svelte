@@ -33,6 +33,7 @@
 			{/each}
 		</nav>
 		<a class="view" href="/" target="_blank" rel="noopener">View status page ↗</a>
+		<a class="view" href="/private" target="_blank" rel="noopener">Private status page ↗</a>
 		<div class="who t-xs">
 			{#if data.admin?.via === 'access'}
 				<span>{data.admin.email ?? 'Signed in'}</span>

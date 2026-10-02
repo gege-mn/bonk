@@ -11,7 +11,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	// Routing matches the decoded path (e.g. /%61dmin → /admin), so gate on that and on the route itself.
-	if (path === '/admin' || path.startsWith('/admin/') || event.route.id?.startsWith('/admin')) {
+	// /private is the status page with private monitors included; it takes the same sign-in as the admin.
+	const under = (p: string | null | undefined, root: string) => p === root || !!p?.startsWith(`${root}/`);
+	const gated = ['/admin', '/private'].some((root) => under(path, root) || under(event.route.id, root));
+	if (gated) {
 		const env = event.platform!.env;
 		const mode = authMode(env);
 		if (mode === 'access') {
@@ -33,10 +36,10 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	const response = await resolve(event);
-	if (path.startsWith('/admin')) {
+	if (gated) {
 		response.headers.set('cache-control', 'no-store');
 		response.headers.set('x-robots-tag', 'noindex');
-		// The public page may be embedded; the admin may not.
+		// The public page may be embedded; the admin and the private page may not.
 		response.headers.set('x-frame-options', 'DENY');
 	}
 	response.headers.set('referrer-policy', 'strict-origin-when-cross-origin');

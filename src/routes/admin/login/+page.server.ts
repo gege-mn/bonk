@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { authMode, clearAttempts, makeSession, passwordMatches, registerAttempt, SESSION_COOKIE } from '$lib/server/auth';
 import type { Actions, PageServerLoad } from './$types';
 
-const safeNext = (n: string | null) => (n && n.startsWith('/admin') && !n.startsWith('//') ? n : '/admin');
+const safeNext = (n: string | null) => (n && /^\/(admin|private)(\/|\?|$)/.test(n) ? n : '/admin');
 
 export const load: PageServerLoad = async ({ platform, locals, url }) => {
 	if (authMode(platform!.env) !== 'password' || locals.admin) redirect(303, safeNext(url.searchParams.get('next')));

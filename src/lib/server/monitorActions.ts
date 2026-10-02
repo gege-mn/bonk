@@ -46,6 +46,8 @@ export async function saveMonitor(event: RequestEvent, id: number | null) {
 			)
 			.bind(...vals, values.type, newPushToken(), id)
 			.run();
+		// Its automatic incidents follow it, so going private also takes its history off the public page.
+		await db.prepare('UPDATE incidents SET public = ? WHERE monitor_id = ? AND auto = 1').bind(values.public, id).run();
 	}
 	const valid = await db.prepare('SELECT id FROM channels').all<{ id: number }>();
 	const ids = channelIds.filter((c) => valid.results.some((v) => v.id === c));

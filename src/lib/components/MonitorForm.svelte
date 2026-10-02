@@ -276,8 +276,11 @@
 		</fieldset>
 
 		<fieldset class="grid2">
-			<legend class="legend">Public status page</legend>
-			<label class="check wide"><input type="checkbox" name="public" checked={on('public')} />Show on the status page</label>
+			<legend class="legend">Status page</legend>
+			<div class="field wide">
+				<label class="check"><input type="checkbox" name="public" checked={on('public')} />Show on the public status page</label>
+				<span class="help">Unchecked, the monitor is private: it only appears on the signed-in page at <a href="/private">/private</a>. Alerts are sent either way.</span>
+			</div>
 			<label class="field">
 				Group
 				<input class="input" name="group_name" value={s('group_name')} list="groups" placeholder="e.g. API" />

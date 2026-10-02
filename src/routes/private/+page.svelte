@@ -4,4 +4,4 @@
 	let { data } = $props();
 </script>
 
-<StatusPage appearance={data.appearance} status={data.status} />
+<StatusPage appearance={data.appearance} status={data.status} gated />

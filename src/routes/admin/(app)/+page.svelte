@@ -69,7 +69,7 @@
 				<span class="name-cell" role="cell">
 					<span class="swatch s-{statusOf(m)}"></span>
 					<span class="name-text">
-						<span class="t-heading name">{m.name}</span>
+						<span class="t-heading name">{m.name}{#if !m.public}<span class="t-xs t-muted private"> · private</span>{/if}</span>
 						<span class="t-xs t-muted target">{m.type === 'push' ? `Push · expects a ping every ${Math.round(m.interval_s / 60)} min` : m.target}</span>
 					</span>
 				</span>
@@ -186,6 +186,9 @@
 	}
 	.name {
 		font-size: 16px;
+	}
+	.private {
+		font-weight: 400;
 	}
 	.target {
 		white-space: nowrap;

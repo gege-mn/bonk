@@ -10,6 +10,7 @@ Uptime monitoring and a public status page that run entirely on Cloudflare: one 
 - **Admin panel:** add and edit monitors in a form, test a check before saving, pause, see response-time charts and event logs. No config files, no redeploys.
 - **Alerts** through 35 services: Telegram, Discord, Slack, Microsoft Teams, Google Chat, Mattermost, Rocket.Chat, Matrix, Zulip, Webex, ntfy, Gotify, Pushover, Pushbullet, Bark, LINE, Signal, Feishu/Lark, DingTalk, WeCom, PagerDuty, Opsgenie, Splunk On-Call, Home Assistant, Apprise, generic webhooks, email (Resend, Postmark, SendGrid, Mailgun, Brevo, SMTP2GO), Twilio SMS, PushDeer and ServerChan.
 - **Status page** with 90-day history, incidents (opened and closed automatically, with manual updates) and scheduled maintenance.
+- **Private monitors:** untick *Show on the public status page* and a monitor (with its automatic incidents) disappears from the public page and `/api/status.json`, but keeps checking and alerting. Signed-in admins see everything on one status page at `/private`.
 - **Your brand:** logo, colors, fonts and corner style are editable from the admin, with a live preview and contrast checks. See [docs/design-system.md](docs/design-system.md).
 - **Sign-in** with Cloudflare Access, or a password stored as a Worker secret.
 
@@ -60,13 +61,13 @@ Then open **Admin → Settings** and set **Public URL** to that address, so aler
 ## Signing in with Cloudflare Access (recommended)
 
 1. In Zero Trust, go to **Access → Applications → Add an application → Self-hosted**.
-2. Set the domain to your status host with path `admin`, e.g. `status.example.com/admin`. Add a policy for the people allowed in.
+2. Set the domain to your status host with path `admin`, e.g. `status.example.com/admin`. Add `status.example.com/private` to the same application if you use private monitors. Add a policy for the people allowed in.
 3. Copy the application's **Application Audience (AUD) Tag**.
 4. On the Worker, set:
    - `CF_TEAM_DOMAIN`: `https://<your-team>.cloudflareaccess.com`
    - `CF_AUD_TOKEN`: the AUD tag
 
-When both are set, Bonk verifies the Access JWT on every `/admin` request (signature, issuer and audience) and ignores `ADMIN_PASSWORD`. A request that didn't come through Access, e.g. via the `workers.dev` URL, gets a 403.
+When both are set, Bonk verifies the Access JWT on every `/admin` and `/private` request (signature, issuer and audience) and ignores `ADMIN_PASSWORD`. A request that didn't come through Access, e.g. via the `workers.dev` URL, gets a 403.
 
 Without Access, `/admin` uses `ADMIN_PASSWORD`. Sessions are signed with the password itself, so changing it signs everyone out. Failed sign-ins are rate-limited per IP.
 
